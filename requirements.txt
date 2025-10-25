@@ -1,0 +1,30 @@
+# VQMR - Video Quality Metrics Report
+# Python Dependencies
+
+# Core Framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+jinja2>=3.1.0
+python-multipart>=0.0.6
+
+# Data Validation
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+nanoid>=2.0.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.0
+httpx>=0.25.0  # For TestClient
+
+# Code Quality
+flake8>=6.1.0
+black>=23.10.0
+mypy>=1.6.0
+
+# System Monitoring (for CPU utilization tracking)
+psutil>=5.9.0
