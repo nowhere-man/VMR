@@ -96,10 +96,17 @@
                     <label for="source_path" class="block text-sm font-medium text-gray-700 mb-1">
                         源视频路径 <span class="text-red-500">*</span>
                     </label>
-                    <input type="text" id="source_path" name="source_path" required
-                        class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="/path/to/videos/*.mp4">
-                    <p class="mt-1 text-xs text-gray-500">支持文件、目录或通配符（例如: *.mp4）</p>
+                    <textarea id="source_path" name="source_path" rows="3" required
+                        class="w-full border border-gray-300 rounded-md px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="/path/to/video.mp4"></textarea>
+                    <div class="mt-2 bg-gray-50 rounded p-3">
+                        <p class="text-xs font-medium text-gray-700 mb-2">支持三种模式:</p>
+                        <div class="space-y-1 text-xs text-gray-600">
+                            <div><strong>1. 单个文件:</strong> <code class="bg-white px-1 py-0.5 rounded">/path/to/video.mp4</code></div>
+                            <div><strong>2. 多个文件（逗号分隔）:</strong> <code class="bg-white px-1 py-0.5 rounded">/path/video1.mp4,/path/video2.mp4</code></div>
+                            <div><strong>3. 目录（转码所有视频）:</strong> <code class="bg-white px-1 py-0.5 rounded">/path/to/videos/</code></div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Output Dir -->

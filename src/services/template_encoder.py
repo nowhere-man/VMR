@@ -264,14 +264,32 @@ class TemplateEncoderService:
     def _resolve_source_files(self, source_path: str) -> List[Path]:
         """
         解析源文件路径
+        
+        支持三种模式：
+        1. 单个文件路径: /path/to/video.mp4
+        2. 多个文件路径（逗号分隔）: /path/to/video1.mp4,/path/to/video2.mp4
+        3. 目录路径: /path/to/videos/
 
         Args:
-            source_path: 源路径（文件或目录，支持通配符）
+            source_path: 源路径
 
         Returns:
             源文件列表
         """
-        path = Path(source_path)
+        # 检查是否包含逗号（多个文件）
+        if ',' in source_path:
+            files = []
+            for file_path in source_path.split(','):
+                file_path = file_path.strip()
+                if file_path:
+                    path = Path(file_path)
+                    if path.is_file():
+                        files.append(path)
+                    else:
+                        logger.warning(f"文件不存在: {file_path}")
+            return sorted(files)
+        
+        path = Path(source_path.strip())
 
         # 如果是文件
         if path.is_file():

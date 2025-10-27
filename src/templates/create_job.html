@@ -132,11 +132,29 @@ function updateFormVisibility() {
     }
 }
 
+// 从 URL 参数读取模式
+function initializeModeFromURL() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const mode = urlParams.get('mode');
+    
+    if (mode === 'dual_file' || mode === 'single_file') {
+        const radioButton = document.querySelector('input[name="mode"][value="' + mode + '"]');
+        if (radioButton) {
+            radioButton.checked = true;
+        }
+    }
+    
+    updateFormVisibility();
+}
+
 // 表单提交处理
 document.getElementById('jobForm').addEventListener('submit', function(e) {
     const submitBtn = document.getElementById('submitBtn');
     submitBtn.disabled = true;
     submitBtn.textContent = '正在创建...';
 });
+
+// 初始化
+initializeModeFromURL();
 </script>
 {% endblock %}
