@@ -10,8 +10,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from ..models import JobStatus
-from ..services import job_storage
+from src.models import JobStatus
+from src.services import job_storage
 
 router = APIRouter(tags=["pages"])
 

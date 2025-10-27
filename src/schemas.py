@@ -8,7 +8,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
-from .models import JobMode, JobStatus, MetricsResult
+from src.models import JobMode, JobStatus, MetricsResult
 
 
 class CreateJobResponse(BaseModel):

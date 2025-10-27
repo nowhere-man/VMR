@@ -7,10 +7,10 @@ from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
-from ..models import JobMetadata, JobMode, JobStatus
-from ..schemas import CreateJobResponse, ErrorResponse, JobDetailResponse, JobListItem
-from ..services import job_storage
-from ..utils import extract_video_info, save_uploaded_file
+from src.models import JobMetadata, JobMode, JobStatus
+from src.schemas import CreateJobResponse, ErrorResponse, JobDetailResponse, JobListItem
+from src.services import job_storage
+from src.utils import extract_video_info, save_uploaded_file
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 

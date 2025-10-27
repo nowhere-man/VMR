@@ -24,6 +24,9 @@ fi
 # Create jobs directory if it doesn't exist
 mkdir -p jobs
 
+# Export PYTHONPATH to include current directory
+export PYTHONPATH=.
+
 echo "Starting server..."
 echo "Access the application at: http://localhost:8080"
 echo "API documentation at: http://localhost:8080/api/docs"
@@ -32,4 +35,4 @@ echo "Press Ctrl+C to stop the server"
 echo ""
 
 # Start the server
-./venv/bin/uvicorn backend.src.main:app --reload --host 0.0.0.0 --port 8080
+./venv/bin/uvicorn src.main:app --reload --host 0.0.0.0 --port 8080

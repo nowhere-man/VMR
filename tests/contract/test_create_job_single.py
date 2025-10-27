@@ -6,7 +6,7 @@ US1 Contract Tests - 创建任务（单文件模式）
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.src.main import app
+from src.main import app
 
 
 @pytest.fixture

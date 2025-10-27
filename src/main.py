@@ -12,9 +12,9 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .api import jobs_router, pages_router
-from .config import settings
-from .services import task_processor
+from src.api import jobs_router, pages_router
+from src.config import settings
+from src.services import task_processor
 
 
 # 应用生命周期管理
@@ -45,7 +45,7 @@ app.include_router(pages_router)
 
 # 配置静态文件和模板
 BASE_DIR = Path(__file__).resolve().parent
-STATIC_DIR = BASE_DIR.parent.parent / "frontend" / "static"
+STATIC_DIR = BASE_DIR / "static"
 TEMPLATES_DIR = BASE_DIR / "templates"
 
 # 挂载静态文件目录（如果存在）
@@ -79,7 +79,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        "backend.src.main:app",
+        "main:app",
         host=settings.host,
         port=settings.port,
         reload=True,

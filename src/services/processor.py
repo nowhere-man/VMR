@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from ..models import Job, JobMode, JobStatus, MetricsResult
+from src.models import Job, JobMode, JobStatus, MetricsResult
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ class TaskProcessor:
 
         # 更新待测视频信息
         video_info = await self._get_video_info(distorted_path)
-        from ..models import VideoInfo
+        from models import VideoInfo
 
         job.metadata.distorted_video = VideoInfo(
             filename=distorted_path.name,

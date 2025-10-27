@@ -10,8 +10,8 @@ from typing import List, Optional
 
 from nanoid import generate
 
-from ..config import settings
-from ..models import Job, JobMetadata, JobStatus
+from src.config import settings
+from src.models import Job, JobMetadata, JobStatus
 
 
 class JobStorage:

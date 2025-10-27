@@ -6,7 +6,7 @@ US1 Contract Tests - 列出任务
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.src.main import app
+from src.main import app
 
 
 @pytest.fixture

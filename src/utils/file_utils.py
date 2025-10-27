@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from ..models import VideoInfo
+from src.models import VideoInfo
 
 
 def save_uploaded_file(file_content: bytes, destination: Path) -> None:
