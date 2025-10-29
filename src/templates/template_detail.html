@@ -8,17 +8,31 @@
     <div class="bg-white rounded-lg shadow-sm p-6">
         <div class="flex justify-between items-start">
             <div class="flex-1">
-                <div class="flex items-center">
+                <div class="flex items-center flex-wrap gap-2">
                     <h1 class="text-2xl font-bold text-gray-900">{{ template.name }}</h1>
+                    
+                    <!-- Mode Badge -->
+                    {% set mode_info = {
+                        'transcode_and_analyze': {'label': '转码+分析', 'color': 'bg-blue-100 text-blue-800'},
+                        'analyze_only': {'label': '仅分析', 'color': 'bg-green-100 text-green-800'},
+                        'transcode_only': {'label': '仅转码', 'color': 'bg-purple-100 text-purple-800'}
+                    } %}
+                    <span class="px-3 py-1 rounded-full text-sm font-medium {{ mode_info.get(template.mode, {}).get('color', 'bg-gray-100 text-gray-800') }}">
+                        {{ mode_info.get(template.mode, {}).get('label', template.mode) }}
+                    </span>
+                    
+                    <!-- Encoder Badge (only if encoder is configured) -->
+                    {% if template.encoder_type %}
                     {% set encoder_colors = {
-                        'ffmpeg': 'bg-blue-100 text-blue-800',
-                        'x264': 'bg-green-100 text-green-800',
-                        'x265': 'bg-purple-100 text-purple-800',
+                        'ffmpeg': 'bg-indigo-100 text-indigo-800',
+                        'x264': 'bg-teal-100 text-teal-800',
+                        'x265': 'bg-pink-100 text-pink-800',
                         'vvenc': 'bg-orange-100 text-orange-800'
                     } %}
-                    <span class="ml-3 px-3 py-1 rounded-full text-sm font-medium {{ encoder_colors.get(template.encoder_type, 'bg-gray-100 text-gray-800') }}">
+                    <span class="px-3 py-1 rounded-full text-sm font-medium {{ encoder_colors.get(template.encoder_type, 'bg-gray-100 text-gray-800') }}">
                         {{ template.encoder_type.upper() }}
                     </span>
+                    {% endif %}
                 </div>
                 {% if template.description %}
                 <p class="mt-2 text-gray-600">{{ template.description }}</p>
@@ -51,13 +65,20 @@
 
     <!-- Configuration -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <!-- Encoder Configuration -->
+        <!-- Encoder Configuration (for transcode modes) -->
+        {% if template.mode in ['transcode_and_analyze', 'transcode_only'] %}
         <div class="bg-white rounded-lg shadow-sm p-6">
             <h2 class="text-lg font-semibold text-gray-900 mb-4">编码器配置</h2>
             <dl class="space-y-3">
                 <div>
                     <dt class="text-sm font-medium text-gray-500">编码器类型</dt>
                     <dd class="mt-1 text-sm text-gray-900">{{ template.encoder_type }}</dd>
+                </div>
+                <div>
+                    <dt class="text-sm font-medium text-gray-500">编码器路径</dt>
+                    <dd class="mt-1 text-sm text-gray-900 font-mono break-all">
+                        {{ template.encoder_path or '未配置（使用默认可执行文件）' }}
+                    </dd>
                 </div>
                 <div>
                     <dt class="text-sm font-medium text-gray-500">编码参数</dt>
@@ -67,22 +88,60 @@
                 </div>
             </dl>
         </div>
+        {% endif %}
+
+        <!-- FFmpeg Configuration (for modes that calculate metrics) -->
+        {% if template.mode in ['transcode_and_analyze', 'analyze_only'] %}
+        <div class="bg-white rounded-lg shadow-sm p-6">
+            <h2 class="text-lg font-semibold text-gray-900 mb-4">FFmpeg 配置（质量指标计算）</h2>
+            <dl class="space-y-3">
+                <div>
+                    <dt class="text-sm font-medium text-gray-500">FFmpeg 路径</dt>
+                    <dd class="mt-1 text-sm text-gray-900 font-mono break-all">
+                        {{ template.ffmpeg_path or '未配置（使用默认 ffmpeg 命令）' }}
+                    </dd>
+                    <p class="mt-1 text-xs text-gray-500">用于计算 PSNR、SSIM、VMAF 等质量指标</p>
+                </div>
+            </dl>
+        </div>
+        {% endif %}
 
         <!-- Path Configuration -->
         <div class="bg-white rounded-lg shadow-sm p-6">
             <h2 class="text-lg font-semibold text-gray-900 mb-4">路径配置</h2>
             <dl class="space-y-3">
                 <div>
-                    <dt class="text-sm font-medium text-gray-500">源视频路径</dt>
+                    <dt class="text-sm font-medium text-gray-500">
+                        {% if template.mode == 'analyze_only' %}待测视频路径{% else %}源视频路径{% endif %}
+                    </dt>
                     <dd class="mt-1 text-sm text-gray-900 font-mono break-all bg-gray-50 p-2 rounded">{{ template.source_path }}</dd>
                     <dd class="mt-1 text-xs text-gray-500">
+                        {% if template.mode == 'analyze_only' %}
+                        待测视频文件或目录，将与参考视频对比质量
+                        {% else %}
                         支持: 单个文件 | 多个文件（逗号分隔） | 目录路径
+                        {% endif %}
                     </dd>
                 </div>
+                
+                <!-- Reference Path (analyze_only mode only) -->
+                {% if template.mode == 'analyze_only' and template.reference_path %}
+                <div>
+                    <dt class="text-sm font-medium text-gray-500">参考视频路径（原始视频）</dt>
+                    <dd class="mt-1 text-sm text-gray-900 font-mono break-all bg-gray-50 p-2 rounded">{{ template.reference_path }}</dd>
+                    <dd class="mt-1 text-xs text-gray-500">
+                        原始视频路径，用于与待测视频对比质量
+                    </dd>
+                </div>
+                {% endif %}
+                
+                <!-- Output Dir (only for transcode modes) -->
+                {% if template.mode in ['transcode_and_analyze', 'transcode_only'] %}
                 <div>
                     <dt class="text-sm font-medium text-gray-500">输出目录</dt>
                     <dd class="mt-1 text-sm text-gray-900 font-mono break-all">{{ template.output_dir }}</dd>
                 </div>
+                {% endif %}
                 <div>
                     <dt class="text-sm font-medium text-gray-500">报告目录</dt>
                     <dd class="mt-1 text-sm text-gray-900 font-mono break-all">{{ template.metrics_report_dir }}</dd>
@@ -90,24 +149,12 @@
             </dl>
         </div>
 
-        <!-- Quality Metrics -->
+        <!-- Quality Metrics (for analyze modes) -->
+        {% if template.mode in ['transcode_and_analyze', 'analyze_only'] %}
         <div class="bg-white rounded-lg shadow-sm p-6">
-            <h2 class="text-lg font-semibold text-gray-900 mb-4">质量指标</h2>
+            <h2 class="text-lg font-semibold text-gray-900 mb-4">质量指标（自动启用）</h2>
+            <p class="text-sm text-gray-600 mb-4">此模式将自动计算以下质量指标：</p>
             <dl class="space-y-3">
-                <div>
-                    <dt class="text-sm font-medium text-gray-500">启用指标计算</dt>
-                    <dd class="mt-1 text-sm">
-                        {% if template.enable_metrics %}
-                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            是
-                        </span>
-                        {% else %}
-                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                            否
-                        </span>
-                        {% endif %}
-                    </dd>
-                </div>
                 <div>
                     <dt class="text-sm font-medium text-gray-500">指标类型</dt>
                     <dd class="mt-1 flex flex-wrap gap-2">
@@ -120,6 +167,7 @@
                 </div>
             </dl>
         </div>
+        {% endif %}
 
         <!-- Advanced Options -->
         <div class="bg-white rounded-lg shadow-sm p-6">

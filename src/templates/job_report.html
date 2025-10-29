@@ -25,7 +25,10 @@
             <div>
                 <dt class="text-sm font-medium text-gray-500">模式</dt>
                 <dd class="mt-1 text-sm text-gray-900">
-                    {% if job.mode == 'single_file' %}单文件模式{% else %}双文件模式{% endif %}
+                    {% if job.mode == 'single_file' %}单文件模式
+                    {% elif job.mode == 'dual_file' %}双文件模式
+                    {% elif job.mode == 'comparison' %}模板对比模式
+                    {% else %}{{ job.mode }}{% endif %}
                 </dd>
             </div>
             <div>
@@ -138,6 +141,120 @@
         <button onclick="location.reload()" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
             刷新状态
         </button>
+    </div>
+    {% endif %}
+
+    <!-- 模板对比结果 -->
+    {% if job.mode == 'comparison' and job.comparison_result %}
+    <div class="bg-white rounded-lg shadow-sm p-6 space-y-6">
+        <h2 class="text-lg font-semibold text-gray-900">模板对比结果</h2>
+        
+        <!-- Templates Info -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="border border-gray-200 rounded-lg p-4">
+                <h3 class="text-sm font-medium text-gray-700 mb-2">模板 A</h3>
+                <p class="text-sm text-gray-900 font-medium">{{ job.comparison_result.template_a.template_name }}</p>
+            </div>
+            <div class="border border-gray-200 rounded-lg p-4">
+                <h3 class="text-sm font-medium text-gray-700 mb-2">模板 B</h3>
+                <p class="text-sm text-gray-900 font-medium">{{ job.comparison_result.template_b.template_name }}</p>
+            </div>
+        </div>
+
+        <!-- Summary Metrics -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="border border-gray-200 rounded-lg p-4">
+                <h3 class="text-sm font-medium text-gray-500 mb-2">平均转码帧率 (fps)</h3>
+                <div class="flex items-baseline space-x-4">
+                    <div>
+                        <div class="text-xs text-gray-500">模板 A</div>
+                        <div class="text-lg font-semibold text-gray-900">{{ "%.2f"|format(job.comparison_result.comparisons.speed_fps.template_a) if job.comparison_result.comparisons.speed_fps.template_a else '-' }}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-gray-500">模板 B</div>
+                        <div class="text-lg font-semibold text-gray-900">{{ "%.2f"|format(job.comparison_result.comparisons.speed_fps.template_b) if job.comparison_result.comparisons.speed_fps.template_b else '-' }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="border border-gray-200 rounded-lg p-4">
+                <h3 class="text-sm font-medium text-gray-500 mb-2">平均 CPU 占用 (%)</h3>
+                <div class="flex items-baseline space-x-4">
+                    <div>
+                        <div class="text-xs text-gray-500">模板 A</div>
+                        <div class="text-lg font-semibold text-gray-900">{{ "%.2f"|format(job.comparison_result.comparisons.cpu_percent.template_a) if job.comparison_result.comparisons.cpu_percent.template_a else '-' }}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-gray-500">模板 B</div>
+                        <div class="text-lg font-semibold text-gray-900">{{ "%.2f"|format(job.comparison_result.comparisons.cpu_percent.template_b) if job.comparison_result.comparisons.cpu_percent.template_b else '-' }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="border border-gray-200 rounded-lg p-4">
+                <h3 class="text-sm font-medium text-gray-500 mb-2">平均码率 (kbps)</h3>
+                <div class="flex items-baseline space-x-4">
+                    <div>
+                        <div class="text-xs text-gray-500">模板 A</div>
+                        <div class="text-lg font-semibold text-gray-900">{{ "%.2f"|format(job.comparison_result.comparisons.bitrate.template_a / 1000) if job.comparison_result.comparisons.bitrate.template_a else '-' }}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-gray-500">模板 B</div>
+                        <div class="text-lg font-semibold text-gray-900">{{ "%.2f"|format(job.comparison_result.comparisons.bitrate.template_b / 1000) if job.comparison_result.comparisons.bitrate.template_b else '-' }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quality Metrics Table -->
+        <div>
+            <h3 class="text-md font-semibold text-gray-900 mb-3">质量指标对比</h3>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left font-medium text-gray-700">指标</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-700">模板 A</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-700">模板 B</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-700">差值 (B - A)</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        {% for metric_key, metric_data in job.comparison_result.comparisons.quality_metrics.items() %}
+                        <tr>
+                            <td class="px-4 py-3 text-gray-700">{{ metric_key.upper() }}</td>
+                            <td class="px-4 py-3">{{ "%.2f"|format(metric_data.template_a) if metric_data.template_a else '-' }}</td>
+                            <td class="px-4 py-3">{{ "%.2f"|format(metric_data.template_b) if metric_data.template_b else '-' }}</td>
+                            <td class="px-4 py-3">{{ "%.2f"|format(metric_data.delta) if metric_data.delta else '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- BD-rate Table -->
+        <div>
+            <h3 class="text-md font-semibold text-gray-900 mb-3">BD-rate 对比</h3>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left font-medium text-gray-700">指标</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-700">BD-rate (B 相对 A)</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        {% for metric_key, bd_value in job.comparison_result.comparisons.bd_rate.items() %}
+                        <tr>
+                            <td class="px-4 py-3 text-gray-700">{{ metric_key.upper() }}</td>
+                            <td class="px-4 py-3">{{ "%.2f%%"|format(bd_value) if bd_value else '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
     {% endif %}
 

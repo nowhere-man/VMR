@@ -59,7 +59,10 @@
                         {{ job.job_id }}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {% if job.mode == 'single_file' %}单文件{% else %}双文件{% endif %}
+                        {% if job.mode == 'single_file' %}单文件
+                        {% elif job.mode == 'dual_file' %}双文件
+                        {% elif job.mode == 'comparison' %}模板对比
+                        {% else %}{{ job.mode }}{% endif %}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
                         <span class="px-2 py-1 rounded-full text-xs font-medium

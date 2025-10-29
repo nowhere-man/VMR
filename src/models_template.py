@@ -20,6 +20,14 @@ class EncoderType(str, Enum):
     VVENC = "vvenc"  # VVenC (VVC) 编码器
 
 
+class TemplateMode(str, Enum):
+    """模板模式枚举"""
+
+    TRANSCODE_AND_ANALYZE = "transcode_and_analyze"  # 转码 + 质量分析
+    ANALYZE_ONLY = "analyze_only"  # 仅质量分析（不转码）
+    TRANSCODE_ONLY = "transcode_only"  # 仅转码（不分析）
+
+
 class EncodingTemplateMetadata(BaseModel):
     """转码模板元数据（持久化到 JSON）"""
 
@@ -27,23 +35,41 @@ class EncodingTemplateMetadata(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, description="模板名称")
     description: Optional[str] = Field(None, max_length=500, description="模板描述")
 
-    # 编码器配置
-    encoder_type: EncoderType = Field(..., description="编码器类型")
-    encoder_params: str = Field(
-        ..., min_length=1, max_length=2000, description="编码参数（字符串格式）"
+    # 模板模式
+    mode: TemplateMode = Field(
+        default=TemplateMode.TRANSCODE_AND_ANALYZE, description="模板模式"
+    )
+
+    # 编码器配置（仅转码模式需要）
+    encoder_type: Optional[EncoderType] = Field(None, description="编码器类型")
+    encoder_params: Optional[str] = Field(
+        None, max_length=2000, description="编码参数（字符串格式）"
+    )
+    encoder_path: Optional[str] = Field(
+        default=None, description="编码器可执行文件的绝对路径（可选）"
+    )
+    
+    # FFmpeg 路径（用于质量指标计算，转码+分析和仅分析模式可选）
+    ffmpeg_path: Optional[str] = Field(
+        default=None, description="FFmpeg 可执行文件的绝对路径（可选，用于质量指标计算）"
     )
 
     # 路径配置
     source_path: str = Field(
         ..., min_length=1, description="源视频路径或目录（支持通配符）"
     )
-    output_dir: str = Field(..., min_length=1, description="转码后视频输出目录")
+    output_dir: Optional[str] = Field(None, min_length=1, description="转码后视频输出目录（仅转码模式需要）")
     metrics_report_dir: str = Field(..., min_length=1, description="metrics 报告保存目录")
 
-    # 额外配置项
+    # 质量指标配置（分析模式需要）
     enable_metrics: bool = Field(default=True, description="是否启用质量指标计算")
     metrics_types: list[str] = Field(
         default=["psnr", "ssim", "vmaf"], description="要计算的指标类型"
+    )
+    
+    # 参考视频路径（仅 analyze_only 模式需要）
+    reference_path: Optional[str] = Field(
+        None, description="参考视频路径（仅分析模式使用，source_path 为待测视频）"
     )
     output_format: str = Field(default="mp4", description="输出视频格式")
     parallel_jobs: int = Field(
@@ -73,6 +99,37 @@ class EncodingTemplateMetadata(BaseModel):
         if not v.strip():
             raise ValueError("路径不能为空或仅包含空白字符")
         return v.strip()
+
+    @field_validator("encoder_path", "ffmpeg_path")
+    @classmethod
+    def normalize_paths(cls, v: Optional[str]) -> Optional[str]:
+        """归一化路径，允许为空"""
+        if v is None:
+            return None
+        value = v.strip()
+        return value or None
+    
+    def model_post_init(self, __context) -> None:
+        """模型初始化后验证，根据模式检查必需字段"""
+        # 转码模式需要编码器配置和输出目录
+        if self.mode in [TemplateMode.TRANSCODE_AND_ANALYZE, TemplateMode.TRANSCODE_ONLY]:
+            if not self.encoder_type:
+                raise ValueError(f"模式 '{self.mode.value}' 需要指定 encoder_type")
+            if not self.encoder_params:
+                raise ValueError(f"模式 '{self.mode.value}' 需要指定 encoder_params")
+            if not self.output_dir:
+                raise ValueError(f"模式 '{self.mode.value}' 需要指定 output_dir")
+        
+        # 转码+分析和仅分析模式强制启用质量指标
+        if self.mode in [TemplateMode.TRANSCODE_AND_ANALYZE, TemplateMode.ANALYZE_ONLY]:
+            self.enable_metrics = True  # 强制启用
+            if not self.metrics_types:
+                raise ValueError(f"模式 '{self.mode.value}' 需要指定 metrics_types")
+        
+        # 仅分析模式需要参考视频路径
+        if self.mode == TemplateMode.ANALYZE_ONLY:
+            if not self.reference_path or not self.reference_path.strip():
+                raise ValueError(f"模式 'analyze_only' 需要指定 reference_path（参考视频路径）")
 
     model_config = ConfigDict(
         json_encoders={

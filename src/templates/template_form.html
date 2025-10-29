@@ -39,20 +39,38 @@
                         placeholder="简要描述此模板的用途"></textarea>
                     <p class="mt-1 text-xs text-gray-500">最多 500 字符</p>
                 </div>
+
+                <!-- Template Mode -->
+                <div>
+                    <label for="mode" class="block text-sm font-medium text-gray-700 mb-1">
+                        模板模式 <span class="text-red-500">*</span>
+                    </label>
+                    <select id="mode" name="mode" required
+                        class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="transcode_and_analyze">转码 + 质量分析</option>
+                        <option value="analyze_only">仅质量分析（不转码）</option>
+                        <option value="transcode_only">仅转码（不分析）</option>
+                    </select>
+                    <p class="mt-1 text-xs text-gray-500">
+                        <strong>转码+分析:</strong> 先转码视频，再对比质量<br>
+                        <strong>仅分析:</strong> 不转码，直接对比两个视频的质量（需要指定参考视频）<br>
+                        <strong>仅转码:</strong> 只转码视频，不进行质量分析
+                    </p>
+                </div>
             </div>
         </div>
 
-        <!-- Encoder Settings -->
-        <div class="border-b border-gray-200 pb-6">
+        <!-- Encoder Settings (for transcode modes) -->
+        <div id="encoderSection" class="border-b border-gray-200 pb-6">
             <h2 class="text-lg font-semibold text-gray-900 mb-4">编码器配置</h2>
             
             <div class="space-y-4">
                 <!-- Encoder Type -->
                 <div>
                     <label for="encoder_type" class="block text-sm font-medium text-gray-700 mb-1">
-                        编码器类型 <span class="text-red-500">*</span>
+                        编码器类型 <span class="text-red-500" id="encoder_type_required">*</span>
                     </label>
-                    <select id="encoder_type" name="encoder_type" required
+                    <select id="encoder_type" name="encoder_type"
                         class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="">请选择</option>
                         <option value="ffmpeg">FFmpeg</option>
@@ -62,12 +80,23 @@
                     </select>
                 </div>
 
+                <!-- Encoder Path -->
+                <div>
+                    <label for="encoder_path" class="block text-sm font-medium text-gray-700 mb-1">
+                        编码器绝对路径
+                    </label>
+                    <input type="text" id="encoder_path" name="encoder_path" maxlength="500"
+                        class="w-full border border-gray-300 rounded-md px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="例如: /usr/local/bin/ffmpeg">
+                    <p class="mt-1 text-xs text-gray-500">留空则使用默认命令，例如 <code>ffmpeg</code>、<code>x264</code> 等。</p>
+                </div>
+
                 <!-- Encoder Params -->
                 <div>
                     <label for="encoder_params" class="block text-sm font-medium text-gray-700 mb-1">
-                        编码参数 <span class="text-red-500">*</span>
+                        编码参数 <span class="text-red-500" id="encoder_params_required">*</span>
                     </label>
-                    <textarea id="encoder_params" name="encoder_params" rows="3" required maxlength="2000"
+                    <textarea id="encoder_params" name="encoder_params" rows="3" maxlength="2000"
                         class="w-full border border-gray-300 rounded-md px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="例如: -c:v libx264 -preset slow -crf 18"></textarea>
                     <p class="mt-1 text-xs text-gray-500">最多 2000 字符</p>
@@ -86,6 +115,23 @@
             </div>
         </div>
 
+        <!-- FFmpeg Path (for analyze_only mode) -->
+        <div id="ffmpegSection" class="hidden border-b border-gray-200 pb-6">
+            <h2 class="text-lg font-semibold text-gray-900 mb-4">FFmpeg 配置</h2>
+            
+            <div class="space-y-4">
+                <div>
+                    <label for="ffmpeg_path" class="block text-sm font-medium text-gray-700 mb-1">
+                        FFmpeg 绝对路径
+                    </label>
+                    <input type="text" id="ffmpeg_path" name="ffmpeg_path" maxlength="500"
+                        class="w-full border border-gray-300 rounded-md px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="例如: /usr/local/bin/ffmpeg">
+                    <p class="mt-1 text-xs text-gray-500">留空则使用默认 <code>ffmpeg</code> 命令。</p>
+                </div>
+            </div>
+        </div>
+
         <!-- Path Settings -->
         <div class="border-b border-gray-200 pb-6">
             <h2 class="text-lg font-semibold text-gray-900 mb-4">路径配置</h2>
@@ -94,14 +140,14 @@
                 <!-- Source Path -->
                 <div>
                     <label for="source_path" class="block text-sm font-medium text-gray-700 mb-1">
-                        源视频路径 <span class="text-red-500">*</span>
+                        <span id="source_path_label">源视频路径</span> <span class="text-red-500">*</span>
                     </label>
                     <textarea id="source_path" name="source_path" rows="3" required
                         class="w-full border border-gray-300 rounded-md px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="/path/to/video.mp4"></textarea>
                     <div class="mt-2 bg-gray-50 rounded p-3">
-                        <p class="text-xs font-medium text-gray-700 mb-2">支持三种模式:</p>
-                        <div class="space-y-1 text-xs text-gray-600">
+                        <p class="text-xs font-medium text-gray-700 mb-2" id="source_path_help_title">支持三种模式:</p>
+                        <div class="space-y-1 text-xs text-gray-600" id="source_path_help_content">
                             <div><strong>1. 单个文件:</strong> <code class="bg-white px-1 py-0.5 rounded">/path/to/video.mp4</code></div>
                             <div><strong>2. 多个文件（逗号分隔）:</strong> <code class="bg-white px-1 py-0.5 rounded">/path/video1.mp4,/path/video2.mp4</code></div>
                             <div><strong>3. 目录（转码所有视频）:</strong> <code class="bg-white px-1 py-0.5 rounded">/path/to/videos/</code></div>
@@ -109,14 +155,26 @@
                     </div>
                 </div>
 
-                <!-- Output Dir -->
-                <div>
-                    <label for="output_dir" class="block text-sm font-medium text-gray-700 mb-1">
-                        输出目录 <span class="text-red-500">*</span>
+                <!-- Reference Path (for analyze_only mode) -->
+                <div id="referencePathField" class="hidden">
+                    <label for="reference_path" class="block text-sm font-medium text-gray-700 mb-1">
+                        参考视频路径（原始视频） <span class="text-red-500" id="reference_path_required">*</span>
                     </label>
-                    <input type="text" id="output_dir" name="output_dir" required
+                    <textarea id="reference_path" name="reference_path" rows="3"
+                        class="w-full border border-gray-300 rounded-md px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="/path/to/reference.mp4"></textarea>
+                    <p class="mt-1 text-xs text-gray-500">参考视频（原始视频）路径，用于与待测视频（源视频路径）对比质量。</p>
+                </div>
+
+                <!-- Output Dir (not needed for analyze_only) -->
+                <div id="outputDirField">
+                    <label for="output_dir" class="block text-sm font-medium text-gray-700 mb-1">
+                        输出目录 <span class="text-red-500" id="output_dir_required">*</span>
+                    </label>
+                    <input type="text" id="output_dir" name="output_dir"
                         class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="/path/to/output">
+                    <p class="mt-1 text-xs text-gray-500">转码后的视频文件将保存到此目录</p>
                 </div>
 
                 <!-- Metrics Report Dir -->
@@ -131,24 +189,16 @@
             </div>
         </div>
 
-        <!-- Advanced Settings -->
-        <div class="pb-6">
-            <h2 class="text-lg font-semibold text-gray-900 mb-4">高级选项</h2>
+        <!-- Quality Metrics Settings (for analyze modes) -->
+        <div id="metricsSection" class="border-b border-gray-200 pb-6">
+            <h2 class="text-lg font-semibold text-gray-900 mb-4">质量指标配置</h2>
+            <p class="text-sm text-gray-600 mb-4">此模式将自动计算以下质量指标：</p>
             
             <div class="space-y-4">
-                <!-- Enable Metrics -->
-                <div class="flex items-center">
-                    <input type="checkbox" id="enable_metrics" name="enable_metrics" checked
-                        class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                    <label for="enable_metrics" class="ml-2 block text-sm text-gray-700">
-                        启用质量指标计算
-                    </label>
-                </div>
-
                 <!-- Metrics Types -->
                 <div id="metrics_types_container">
                     <label class="block text-sm font-medium text-gray-700 mb-2">
-                        指标类型
+                        指标类型 <span class="text-red-500">*</span>
                     </label>
                     <div class="space-y-2">
                         <div class="flex items-center">
@@ -168,6 +218,14 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- Advanced Settings -->
+        <div class="pb-6">
+            <h2 class="text-lg font-semibold text-gray-900 mb-4">高级选项</h2>
+            
+            <div class="space-y-4">
 
                 <!-- Output Format -->
                 <div>
@@ -221,6 +279,74 @@
 const isEditMode = {{ 'true' if template_id else 'false' }};
 const templateId = {{ "'" + template_id + "'" if template_id else 'null' }};
 
+// Update UI based on selected mode
+function updateModeUI() {
+    const mode = document.getElementById('mode').value;
+    const encoderSection = document.getElementById('encoderSection');
+    const ffmpegSection = document.getElementById('ffmpegSection');
+    const metricsSection = document.getElementById('metricsSection');
+    const referencePathField = document.getElementById('referencePathField');
+    const outputDirField = document.getElementById('outputDirField');
+    const sourcePathLabel = document.getElementById('source_path_label');
+    const sourcePathHelpTitle = document.getElementById('source_path_help_title');
+    const sourcePathHelpContent = document.getElementById('source_path_help_content');
+    
+    if (mode === 'transcode_and_analyze') {
+        // Show: encoder, ffmpeg, metrics, output_dir
+        // Hide: reference_path
+        encoderSection.classList.remove('hidden');
+        ffmpegSection.classList.remove('hidden');
+        metricsSection.classList.remove('hidden');
+        referencePathField.classList.add('hidden');
+        outputDirField.classList.remove('hidden');
+        
+        sourcePathLabel.textContent = '源视频路径（待转码）';
+        sourcePathHelpTitle.textContent = '支持三种模式:';
+        sourcePathHelpContent.innerHTML = '<div><strong>1. 单个文件:</strong> <code class="bg-white px-1 py-0.5 rounded">/path/to/video.mp4</code></div><div><strong>2. 多个文件（逗号分隔）:</strong> <code class="bg-white px-1 py-0.5 rounded">/path/video1.mp4,/path/video2.mp4</code></div><div><strong>3. 目录（转码所有视频）:</strong> <code class="bg-white px-1 py-0.5 rounded">/path/to/videos/</code></div>';
+        
+        document.getElementById('encoder_type').required = true;
+        document.getElementById('encoder_params').required = true;
+        document.getElementById('output_dir').required = true;
+        document.getElementById('reference_path').required = false;
+        document.getElementById('output_dir_required').style.display = '';
+    } else if (mode === 'analyze_only') {
+        // Show: ffmpeg, metrics, reference_path
+        // Hide: encoder, output_dir
+        encoderSection.classList.add('hidden');
+        ffmpegSection.classList.remove('hidden');
+        metricsSection.classList.remove('hidden');
+        referencePathField.classList.remove('hidden');
+        outputDirField.classList.add('hidden');
+        
+        sourcePathLabel.textContent = '待测视频路径';
+        sourcePathHelpTitle.textContent = '说明:';
+        sourcePathHelpContent.innerHTML = '<div>指定待测视频文件或目录，将与参考视频进行质量对比。</div>';
+        
+        document.getElementById('encoder_type').required = false;
+        document.getElementById('encoder_params').required = false;
+        document.getElementById('output_dir').required = false;
+        document.getElementById('reference_path').required = true;
+    } else if (mode === 'transcode_only') {
+        // Show: encoder, output_dir
+        // Hide: ffmpeg, metrics, reference_path
+        encoderSection.classList.remove('hidden');
+        ffmpegSection.classList.add('hidden');
+        metricsSection.classList.add('hidden');
+        referencePathField.classList.add('hidden');
+        outputDirField.classList.remove('hidden');
+        
+        sourcePathLabel.textContent = '源视频路径（待转码）';
+        sourcePathHelpTitle.textContent = '支持三种模式:';
+        sourcePathHelpContent.innerHTML = '<div><strong>1. 单个文件:</strong> <code class="bg-white px-1 py-0.5 rounded">/path/to/video.mp4</code></div><div><strong>2. 多个文件（逗号分隔）:</strong> <code class="bg-white px-1 py-0.5 rounded">/path/video1.mp4,/path/video2.mp4</code></div><div><strong>3. 目录（转码所有视频）:</strong> <code class="bg-white px-1 py-0.5 rounded">/path/to/videos/</code></div>';
+        
+        document.getElementById('encoder_type').required = true;
+        document.getElementById('encoder_params').required = true;
+        document.getElementById('output_dir').required = true;
+        document.getElementById('reference_path').required = false;
+        document.getElementById('output_dir_required').style.display = '';
+    }
+}
+
 // Load template data for edit mode
 async function loadTemplate() {
     if (!isEditMode || !templateId) return;
@@ -237,16 +363,21 @@ async function loadTemplate() {
     }
 }
 
+
+
 // Populate form with template data
 function populateForm(template) {
     document.getElementById('name').value = template.name || '';
     document.getElementById('description').value = template.description || '';
+    document.getElementById('mode').value = template.mode || 'transcode_and_analyze';
     document.getElementById('encoder_type').value = template.encoder_type || '';
     document.getElementById('encoder_params').value = template.encoder_params || '';
+    document.getElementById('encoder_path').value = template.encoder_path || '';
+    document.getElementById('ffmpeg_path').value = template.ffmpeg_path || '';
     document.getElementById('source_path').value = template.source_path || '';
+    document.getElementById('reference_path').value = template.reference_path || '';
     document.getElementById('output_dir').value = template.output_dir || '';
     document.getElementById('metrics_report_dir').value = template.metrics_report_dir || '';
-    document.getElementById('enable_metrics').checked = template.enable_metrics !== false;
     document.getElementById('output_format').value = template.output_format || 'mp4';
     document.getElementById('parallel_jobs').value = template.parallel_jobs || 1;
 
@@ -254,6 +385,9 @@ function populateForm(template) {
     document.querySelectorAll('input[name="metrics_types"]').forEach(checkbox => {
         checkbox.checked = template.metrics_types && template.metrics_types.includes(checkbox.value);
     });
+    
+    // Update UI based on mode
+    updateModeUI();
 }
 
 // Handle form submission
@@ -261,25 +395,68 @@ document.getElementById('templateForm').addEventListener('submit', async (e) => 
     e.preventDefault();
 
     // Collect form data
+    const mode = document.getElementById('mode').value;
     const formData = {
         name: document.getElementById('name').value,
         description: document.getElementById('description').value,
-        encoder_type: document.getElementById('encoder_type').value,
-        encoder_params: document.getElementById('encoder_params').value,
+        mode: mode,
         source_path: document.getElementById('source_path').value,
-        output_dir: document.getElementById('output_dir').value,
         metrics_report_dir: document.getElementById('metrics_report_dir').value,
-        enable_metrics: document.getElementById('enable_metrics').checked,
         output_format: document.getElementById('output_format').value,
         parallel_jobs: parseInt(document.getElementById('parallel_jobs').value)
     };
 
-    // Collect metrics types
-    const metricsTypes = [];
-    document.querySelectorAll('input[name="metrics_types"]:checked').forEach(checkbox => {
-        metricsTypes.push(checkbox.value);
-    });
-    formData.metrics_types = metricsTypes;
+    // Add output_dir for transcode modes
+    if (mode === 'transcode_and_analyze' || mode === 'transcode_only') {
+        const outputDir = document.getElementById('output_dir').value.trim();
+        if (outputDir) {
+            formData.output_dir = outputDir;
+        }
+    }
+
+    // Add encoder fields for transcode modes
+    if (mode === 'transcode_and_analyze' || mode === 'transcode_only') {
+        const encoderType = document.getElementById('encoder_type').value;
+        const encoderParams = document.getElementById('encoder_params').value;
+        if (encoderType) formData.encoder_type = encoderType;
+        if (encoderParams) formData.encoder_params = encoderParams;
+        
+        const encoderPathInput = document.getElementById('encoder_path').value.trim();
+        if (encoderPathInput) {
+            formData.encoder_path = encoderPathInput;
+        } else if (isEditMode) {
+            formData.encoder_path = null;
+        }
+    }
+
+    // Add ffmpeg_path for analyze_only mode
+    if (mode === 'analyze_only') {
+        const ffmpegPathInput = document.getElementById('ffmpeg_path').value.trim();
+        if (ffmpegPathInput) {
+            formData.ffmpeg_path = ffmpegPathInput;
+        } else if (isEditMode) {
+            formData.ffmpeg_path = null;
+        }
+        
+        const referencePath = document.getElementById('reference_path').value.trim();
+        if (referencePath) {
+            formData.reference_path = referencePath;
+        }
+    }
+
+    // For analyze modes: force enable metrics and collect types
+    if (mode === 'transcode_and_analyze' || mode === 'analyze_only') {
+        formData.enable_metrics = true;  // Force enable
+        const metricsTypes = [];
+        document.querySelectorAll('input[name="metrics_types"]:checked').forEach(checkbox => {
+            metricsTypes.push(checkbox.value);
+        });
+        formData.metrics_types = metricsTypes;
+    } else {
+        // Transcode only mode: disable metrics
+        formData.enable_metrics = false;
+        formData.metrics_types = [];
+    }
 
     // Show loading
     document.getElementById('loadingOverlay').classList.remove('hidden');
@@ -312,15 +489,13 @@ document.getElementById('templateForm').addEventListener('submit', async (e) => 
     }
 });
 
-// Toggle metrics types based on enable_metrics checkbox
-document.getElementById('enable_metrics').addEventListener('change', (e) => {
-    const container = document.getElementById('metrics_types_container');
-    if (e.target.checked) {
-        container.classList.remove('opacity-50', 'pointer-events-none');
-    } else {
-        container.classList.add('opacity-50', 'pointer-events-none');
-    }
-});
+
+
+// Listen for mode changes
+document.getElementById('mode').addEventListener('change', updateModeUI);
+
+// Initialize UI based on default mode
+updateModeUI();
 
 // Load template data on page load (edit mode)
 if (isEditMode) {

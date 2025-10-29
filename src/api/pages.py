@@ -69,6 +69,9 @@ async def job_report_page(request: Request, job_id: str) -> HTMLResponse:
             "preset": metadata.preset,
             "metrics": metadata.metrics,
             "error_message": metadata.error_message,
+            "template_a_id": metadata.template_a_id,
+            "template_b_id": metadata.template_b_id,
+            "comparison_result": metadata.comparison_result,
         },
     }
 
@@ -126,6 +129,15 @@ async def create_template_page(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/templates/compare", response_class=HTMLResponse)
+async def compare_templates_page(request: Request) -> HTMLResponse:
+    """模板对比页面"""
+
+    return templates.TemplateResponse(
+        "template_compare.html", {"request": request}
+    )
+
+
 @router.get("/templates/{template_id}", response_class=HTMLResponse)
 async def template_detail_page(request: Request, template_id: str) -> HTMLResponse:
     """模板详情页面"""
@@ -149,9 +161,13 @@ async def template_detail_page(request: Request, template_id: str) -> HTMLRespon
             "template_id": metadata.template_id,
             "name": metadata.name,
             "description": metadata.description,
-            "encoder_type": metadata.encoder_type.value,
+            "mode": metadata.mode.value,
+            "encoder_type": metadata.encoder_type.value if metadata.encoder_type else None,
             "encoder_params": metadata.encoder_params,
+            "encoder_path": metadata.encoder_path,
+            "ffmpeg_path": metadata.ffmpeg_path,
             "source_path": metadata.source_path,
+            "reference_path": metadata.reference_path,
             "output_dir": metadata.output_dir,
             "metrics_report_dir": metadata.metrics_report_dir,
             "enable_metrics": metadata.enable_metrics,

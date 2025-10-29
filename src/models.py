@@ -25,6 +25,7 @@ class JobMode(str, Enum):
 
     SINGLE_FILE = "single_file"  # 单文件模式：系统执行预设转码
     DUAL_FILE = "dual_file"  # 双文件模式：用户提供参考和待测视频
+    COMPARISON = "comparison"  # 对比模式：对比两个模板的执行结果
 
 
 class MetricsResult(BaseModel):
@@ -78,6 +79,11 @@ class JobMetadata(BaseModel):
 
     # 转码参数（单文件模式）
     preset: Optional[str] = Field(None, description="转码预设")
+
+    # 对比任务参数（对比模式）
+    template_a_id: Optional[str] = Field(None, description="模板 A ID（对比模式）")
+    template_b_id: Optional[str] = Field(None, description="模板 B ID（对比模式）")
+    comparison_result: Optional[dict] = Field(None, description="对比结果数据（对比模式）")
 
     # 指标结果
     metrics: Optional[MetricsResult] = Field(None, description="质量指标结果")
