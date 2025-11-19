@@ -28,3 +28,8 @@ mypy>=1.6.0
 
 # System Monitoring (for CPU utilization tracking)
 psutil>=5.9.0
+
+# Report Generation
+streamlit>=1.28.0
+plotly>=5.17.0
+pandas>=2.1.0

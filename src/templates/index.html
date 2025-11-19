@@ -9,7 +9,8 @@
         <p class="text-gray-600">请选择需要的操作以开始质量分析或管理转码模板</p>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         <button id="qualityAnalysisBtn" type="button"
             class="group flex flex-col items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-8 text-white shadow-md transition hover:from-blue-600 hover:to-blue-700 hover:shadow-lg focus:outline-none">
             <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-white/20">
@@ -29,6 +30,16 @@
             </div>
             <span class="text-xl font-semibold">指标对比</span>
             <span class="mt-2 text-sm text-cyan-100">选择两个模板对比性能与质量</span>
+        </a>
+
+        <a href="http://localhost:8501" target="_blank" class="group flex flex-col items-center justify-center rounded-xl bg-gradient-to-br from-green-500 to-green-600 p-8 text-white shadow-md transition hover:from-green-600 hover:to-green-700 hover:shadow-lg">
+            <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-white/20">
+                <svg class="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+            </div>
+            <span class="text-xl font-semibold">报告列表</span>
+            <span class="mt-2 text-sm text-green-100">查看所有质量分析报告</span>
         </a>
 
         <a href="/jobs" class="group flex flex-col items-center justify-center rounded-xl bg-gradient-to-br from-gray-700 to-gray-800 p-8 text-white shadow-md transition hover:from-gray-800 hover:to-black hover:shadow-lg">
@@ -52,6 +63,7 @@
         </a>
     </div>
 </div>
+
 
 <!-- 模板选择弹窗 -->
 <div id="templateModal" class="hidden fixed inset-0 z-40 flex items-center justify-center bg-gray-600/60 p-4">
