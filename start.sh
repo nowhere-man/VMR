@@ -1,12 +1,12 @@
 #!/bin/bash
-# VQMR Application Startup Script
+# VMR Application Startup Script
 
 set -e
 
 # Switch to project root (script directory)
 cd "$(dirname "$0")"
 
-echo "Starting VQMR - Video Quality Metrics Report..."
+echo "Starting VMR - Video Metrics Report..."
 echo "================================================"
 echo ""
 

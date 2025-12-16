@@ -19,7 +19,7 @@ from src.services.report_scanner import report_scanner
 
 # 页面配置
 st.set_page_config(
-    page_title="指标对比 - VQMR",
+    page_title="指标对比 - VMR",
     page_icon="📉",
     layout="wide",
 )
@@ -649,7 +649,7 @@ else:  # 任务对比
 
 # 页脚
 st.markdown("---")
-st.caption("VQMR - Video Quality Metrics Report | Powered by Streamlit")
+st.caption("VMR - Video Metrics Report | Powered by Streamlit")
 
 # 快速导航
 col1, col2 = st.columns(2)

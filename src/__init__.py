@@ -1,1 +1,1 @@
-"""VQMR Backend - Video Quality Metrics Report"""
+"""VMR Backend - Video Metrics Report"""

@@ -1,34 +1,27 @@
 {% extends "base.html" %}
 
-{% block title %}首页 - VQMR{% endblock %}
+{% block title %}首页 - VMR{% endblock %}
 
 {% block content %}
 <div class="max-w-4xl mx-auto space-y-6">
     <div class="text-center space-y-2">
-        <h1 class="text-3xl font-bold text-gray-900">视频质量指标分析</h1>
-        <p class="text-gray-600">请选择需要的操作以开始质量分析或管理转码模板</p>
+        <h1 class="text-3xl font-bold text-gray-900">视频指标分析</h1>
     </div>
 
 
-	    <!-- 第一行：码流分析 -->
-	    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-	        <a href="/bitstream"
-	            class="group flex flex-col items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 p-8 text-white shadow-md transition hover:from-amber-600 hover:to-amber-700 hover:shadow-lg focus:outline-none h-48">
-	            <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-white/20">
-	                <svg class="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-	                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-	                </svg>
-	            </div>
-	            <span class="text-xl font-semibold">码流分析</span>
-	            <span class="mt-2 text-sm text-amber-100">Ref + 多个 Encoded 的质量与码率分析</span>
-	        </a>
-	    </div>
-
-    <!-- 分割线 -->
-    <div class="border-t border-gray-200"></div>
-
-    <!-- 第二行：Metrics分析、Metrics对比、模板管理（原有第一行） -->
+    <!-- 第一行：码流分析 + Metrics分析 + Metrics对比 -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <a href="/bitstream"
+            class="group flex flex-col items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 p-8 text-white shadow-md transition hover:from-amber-600 hover:to-amber-700 hover:shadow-lg focus:outline-none h-48">
+            <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-white/20">
+                <svg class="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+            </div>
+            <span class="text-xl font-semibold">码流分析</span>
+            <span class="mt-2 text-sm text-amber-100">质量与码率分析</span>
+        </a>
+
         <button id="qualityAnalysisBtn" type="button"
             class="group flex flex-col items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-8 text-white shadow-md transition hover:from-blue-600 hover:to-blue-700 hover:shadow-lg focus:outline-none h-48">
             <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-white/20">
@@ -37,7 +30,7 @@
                 </svg>
             </div>
             <span class="text-xl font-semibold">Metrics分析</span>
-            <span class="mt-2 text-sm text-blue-100">先选择一个转码模板再开始分析</span>
+            <span class="mt-2 text-sm text-blue-100">根据模板进行转码及分析</span>
         </button>
 
         <a href="/templates/compare" class="group flex flex-col items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-cyan-600 p-8 text-white shadow-md transition hover:from-cyan-600 hover:to-cyan-700 hover:shadow-lg h-48">
@@ -47,9 +40,15 @@
                 </svg>
             </div>
             <span class="text-xl font-semibold">Metrics对比</span>
-            <span class="mt-2 text-sm text-cyan-100">选择两个模板对比性能与质量</span>
+            <span class="mt-2 text-sm text-cyan-100">多个模板之间进行Metrics对比</span>
         </a>
+    </div>
 
+    <!-- 分割线 -->
+    <div class="border-t border-gray-200"></div>
+
+    <!-- 第二行：模板管理 + 任务管理 + 报告管理 -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <a href="/templates" class="group flex flex-col items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 p-8 text-white shadow-md transition hover:from-purple-600 hover:to-purple-700 hover:shadow-lg h-48">
             <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-white/20">
                 <svg class="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -57,15 +56,9 @@
                 </svg>
             </div>
             <span class="text-xl font-semibold">模板管理</span>
-            <span class="mt-2 text-sm text-purple-100">创建和维护转码模板</span>
+            <span class="mt-2 text-sm text-purple-100">创建和维护模板</span>
         </a>
-    </div>
 
-    <!-- 分割线 -->
-    <div class="border-t border-gray-200"></div>
-
-    <!-- 第三行：任务管理、报告管理（原有第二行，调整顺序） -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <a href="/jobs" class="group flex flex-col items-center justify-center rounded-xl bg-gradient-to-br from-gray-700 to-gray-800 p-8 text-white shadow-md transition hover:from-gray-800 hover:to-black hover:shadow-lg h-48">
             <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-white/20">
                 <svg class="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -90,7 +83,7 @@
     <!-- 分割线 -->
     <div class="border-t border-gray-200"></div>
 
-    <!-- 第四行：MediaInfo、码率分析 -->
+    <!-- 第三行：MediaInfo、码率分析 -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <button type="button" disabled
             class="group flex flex-col items-center justify-center rounded-xl bg-gradient-to-br from-slate-600 to-slate-700 p-8 text-white shadow-md transition hover:from-slate-700 hover:to-slate-800 hover:shadow-lg focus:outline-none disabled:cursor-not-allowed disabled:opacity-70 h-48">

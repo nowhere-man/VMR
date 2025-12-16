@@ -1,5 +1,5 @@
 """
-VQMR 报告应用 - Streamlit主界面
+VMR 报告应用 - Streamlit主界面
 
 质量分析报告可视化应用
 """
@@ -19,7 +19,7 @@ from src.config import settings
 
 # 页面配置
 st.set_page_config(
-    page_title="VQMR 质量分析报告",
+    page_title="VMR 质量分析报告",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",

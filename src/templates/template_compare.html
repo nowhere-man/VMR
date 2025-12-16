@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}模板指标对比 - VQMR{% endblock %}
+{% block title %}模板指标对比 - VMR{% endblock %}
 
 {% block content %}
 <div class="max-w-6xl mx-auto space-y-8">
@@ -328,7 +328,7 @@ compareForm.addEventListener('submit', async (event) => {
         }
 
         const data = await response.json();
-        
+
         // Redirect to job detail page
         if (data.job_id) {
             window.location.href = `/jobs/${data.job_id}`;

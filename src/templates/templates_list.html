@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}转码模板管理 - VQMR{% endblock %}
+{% block title %}转码模板管理 - VMR{% endblock %}
 
 {% block content %}
 <div class="space-y-6">
@@ -110,11 +110,11 @@ async function loadTemplates(encoderType = '') {
 
         const response = await fetch(url);
         if (!response.ok) throw new Error('Failed to load templates');
-        
+
         templates = await response.json();
-        
+
         document.getElementById('loading').classList.add('hidden');
-        
+
         if (templates.length === 0) {
             document.getElementById('emptyState').classList.remove('hidden');
         } else {
