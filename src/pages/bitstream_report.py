@@ -78,6 +78,12 @@ if not job_id:
 
 # 保持 session_state，方便从首页跳转
 st.session_state["bitstream_job_id"] = job_id
+# 把 job_id 保存在 URL 查询参数里（使用新 API，避免与 st.query_params 冲突）
+try:
+    if st.query_params.get("job_id") != job_id:
+        st.query_params["job_id"] = job_id
+except Exception:
+    pass
 
 try:
     report = _load_report(job_id)
@@ -117,26 +123,82 @@ for item in encoded_items:
     rows.append(
         {
             "Encoded": item.get("label"),
-            "PSNR_avg": psnr.get("psnr_avg"),
             "PSNR_y": psnr.get("psnr_y"),
             "PSNR_u": psnr.get("psnr_u"),
             "PSNR_v": psnr.get("psnr_v"),
-            "SSIM_avg": ssim.get("ssim_avg"),
+            "PSNR_avg": psnr.get("psnr_avg"),
             "SSIM_y": ssim.get("ssim_y"),
             "SSIM_u": ssim.get("ssim_u"),
             "SSIM_v": ssim.get("ssim_v"),
+            "SSIM_avg": ssim.get("ssim_avg"),
             "VMAF": vmaf.get("vmaf_mean"),
-            "VMAF-neg": vmaf.get("vmaf_neg_mean"),
-            "Avg Bitrate (kbps)": (bitrate.get("avg_bitrate_bps") or 0) / 1000,
+            "VMAF_neg": vmaf.get("vmaf_neg_mean"),
+            "Bitrate_kbps": (bitrate.get("avg_bitrate_bps") or 0) / 1000,
         }
     )
 
 df_metrics = pd.DataFrame(rows)
-st.dataframe(df_metrics, use_container_width=True, hide_index=True)
+
+base_columns = [
+    ("Encoded", ""),
+    ("PSNR", "Y"),
+    ("PSNR", "U"),
+    ("PSNR", "V"),
+    ("PSNR", "AVG"),
+    ("SSIM", "Y"),
+    ("SSIM", "U"),
+    ("SSIM", "V"),
+    ("SSIM", "AVG"),
+    ("VMAF", "VMAF"),
+    ("VMAF", "VMAF_neg"),
+    ("Bitrate", "Avg kbps"),
+]
+
+display_df = pd.DataFrame(
+    {
+        ("Encoded", ""): df_metrics["Encoded"],
+        ("PSNR", "Y"): df_metrics["PSNR_y"],
+        ("PSNR", "U"): df_metrics["PSNR_u"],
+        ("PSNR", "V"): df_metrics["PSNR_v"],
+        ("PSNR", "AVG"): df_metrics["PSNR_avg"],
+        ("SSIM", "Y"): df_metrics["SSIM_y"],
+        ("SSIM", "U"): df_metrics["SSIM_u"],
+        ("SSIM", "V"): df_metrics["SSIM_v"],
+        ("SSIM", "AVG"): df_metrics["SSIM_avg"],
+        ("VMAF", "VMAF"): df_metrics["VMAF"],
+        ("VMAF", "VMAF_neg"): df_metrics["VMAF_neg"],
+        ("Bitrate", "Avg kbps"): df_metrics["Bitrate_kbps"],
+    }
+)
+display_df.columns = pd.MultiIndex.from_tuples(base_columns)
+st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+# Diff vs first encoded (separate table, if 2+)
+if len(df_metrics) >= 2:
+    base = df_metrics.iloc[0]
+    diff_data = {
+        ("Encoded", ""): df_metrics["Encoded"],
+        ("PSNR", "Y"): df_metrics["PSNR_y"] - base["PSNR_y"],
+        ("PSNR", "U"): df_metrics["PSNR_u"] - base["PSNR_u"],
+        ("PSNR", "V"): df_metrics["PSNR_v"] - base["PSNR_v"],
+        ("PSNR", "AVG"): df_metrics["PSNR_avg"] - base["PSNR_avg"],
+        ("SSIM", "Y"): df_metrics["SSIM_y"] - base["SSIM_y"],
+        ("SSIM", "U"): df_metrics["SSIM_u"] - base["SSIM_u"],
+        ("SSIM", "V"): df_metrics["SSIM_v"] - base["SSIM_v"],
+        ("SSIM", "AVG"): df_metrics["SSIM_avg"] - base["SSIM_avg"],
+        ("VMAF", "VMAF"): df_metrics["VMAF"] - base["VMAF"],
+        ("VMAF", "VMAF_neg"): df_metrics["VMAF_neg"] - base["VMAF_neg"],
+        ("Bitrate", "Avg kbps"): df_metrics["Bitrate_kbps"] - base["Bitrate_kbps"],
+    }
+    diff_df = pd.DataFrame(diff_data)
+    diff_df.iloc[0, 1:] = 0  # 基准行显示 0
+    diff_df.columns = pd.MultiIndex.from_tuples(base_columns)
+    st.markdown("**Δ 相对于第一个 Encoded**")
+    st.dataframe(diff_df, use_container_width=True, hide_index=True)
 
 st.subheader("逐帧折线图")
 
-tab_psnr, tab_ssim, tab_vmaf = st.tabs(["PSNR", "SSIM", "VMAF / VMAF-neg"])
+tab_psnr, tab_ssim, tab_vmaf, tab_vmaf_neg = st.tabs(["PSNR", "SSIM", "VMAF", "VMAF-neg"])
 
 with tab_psnr:
     comp = st.selectbox("分量", ["avg", "y", "u", "v"], key="psnr_comp")
@@ -167,6 +229,8 @@ with tab_vmaf:
         "VMAF - 每帧",
         "VMAF",
     )
+
+with tab_vmaf_neg:
     _plot_frame_lines(
         encoded_items,
         lambda item: (((item.get("metrics") or {}).get("vmaf") or {}).get("frames") or {}).get("vmaf_neg", []),
@@ -216,7 +280,15 @@ for item in encoded_items:
     if chart_type == "柱状图":
         fig.add_trace(go.Bar(x=x_times, y=y_kbps, name=item.get("label")))
     else:
-        fig.add_trace(go.Scatter(x=x_times, y=y_kbps, mode="lines+markers", name=item.get("label")))
+        fig.add_trace(
+            go.Scatter(
+                x=x_times,
+                y=y_kbps,
+                mode="lines+markers",
+                name=item.get("label"),
+                line_shape="hv",  # 平行线过渡
+            )
+        )
 
 fig.update_layout(
     title=f"码率 (聚合间隔 {bin_seconds}s)",
@@ -227,8 +299,8 @@ fig.update_layout(
 )
 st.plotly_chart(fig, use_container_width=True)
 
-st.subheader("帧结构：帧类型与帧大小（按 Encoded 分行）")
-st.caption("颜色提示：I/IDR=蓝, P=绿, B=橙, RAW/UNK=灰。")
+st.subheader("帧结构：帧类型与帧大小（多个 Encoded 共用一张图）")
+st.caption("颜色提示：I/IDR=蓝, P=绿, B=橙, RAW/UNK=灰；多个 Encoded 叠加显示。")
 
 color_map = {
     "I": "#2563eb",
@@ -239,23 +311,14 @@ color_map = {
     "UNK": "#6b7280",
 }
 
-rows_count = len(encoded_items)
-subplot_titles = [str(item.get("label")) for item in encoded_items]
-fig_frames = make_subplots(
-    rows=rows_count,
-    cols=1,
-    shared_xaxes=True,
-    vertical_spacing=0.03,
-    subplot_titles=subplot_titles,
-)
-
-for r, item in enumerate(encoded_items, start=1):
+fig_frames = go.Figure()
+for idx, item in enumerate(encoded_items):
     bitrate = item.get("bitrate", {}) or {}
     types = bitrate.get("frame_types", []) or []
     sizes = bitrate.get("frame_sizes", []) or []
     colors = [color_map.get(str(t), "#6b7280") for t in types]
     hover = [
-        f"Frame {i}<br>Type: {types[i] if i < len(types) else 'UNK'}<br>Size: {sizes[i]} bytes"
+        f"{item.get('label')}<br>Frame {i}<br>Type: {types[i] if i < len(types) else 'UNK'}<br>Size: {sizes[i]} bytes"
         for i in range(len(sizes))
     ]
     fig_frames.add_trace(
@@ -265,16 +328,19 @@ for r, item in enumerate(encoded_items, start=1):
             marker_color=colors,
             hovertext=hover,
             hoverinfo="text",
-            showlegend=False,
-        ),
-        row=r,
-        col=1,
+            name=item.get("label"),
+            opacity=0.85,
+            offsetgroup=str(idx),
+            legendgroup=str(idx),
+            showlegend=True,
+        )
     )
-    fig_frames.update_yaxes(title_text="Bytes", row=r, col=1)
 
 fig_frames.update_layout(
-    height=max(320, 220 * rows_count),
     xaxis_title="Frame",
+    yaxis_title="Bytes",
+    barmode="group",
+    hovermode="x unified",
 )
 
 st.plotly_chart(fig_frames, use_container_width=True)

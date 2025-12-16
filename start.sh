@@ -28,7 +28,7 @@ echo "   Reports: http://localhost:8079"
 echo ""
 
 # Start Streamlit in background
-.venv/bin/streamlit run streamlit_app.py \
+.venv/bin/streamlit run src/reports_app.py \
     --server.port 8079 \
     --server.address 0.0.0.0 \
     --server.headless true \
