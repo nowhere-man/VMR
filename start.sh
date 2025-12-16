@@ -49,7 +49,6 @@ trap 'exit 0' SIGINT SIGTERM
 
 echo "Starting FastAPI server..."
 echo "   Web UI: http://localhost:8080"
-echo "   API Docs: http://localhost:8080/api/docs"
 echo ""
 
 # Start FastAPI server (foreground)
