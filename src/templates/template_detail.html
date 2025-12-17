@@ -27,9 +27,15 @@
                         'x265': 'bg-pink-100 text-pink-800',
                         'vvenc': 'bg-orange-100 text-orange-800'
                     } %}
+                    {% if template.enable_encode and template.encoder_type %}
                     <span class="px-3 py-1 rounded-full text-sm font-medium {{ encoder_colors.get(template.encoder_type, 'bg-gray-100 text-gray-800') }}">
                         {{ template.encoder_type.upper() }}
                     </span>
+                    {% else %}
+                    <span class="px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800">
+                        跳过编码
+                    </span>
+                    {% endif %}
 
                     <!-- Metrics Badge -->
                     {% if not template.skip_metrics %}
@@ -143,8 +149,20 @@
             <h2 class="text-lg font-semibold text-gray-900 mb-4">编码配置</h2>
             <dl class="space-y-3">
                 <div>
+                    <dt class="text-sm font-medium text-gray-500">是否进行编码</dt>
+                    <dd class="mt-1 text-sm text-gray-900">
+                        {% if template.enable_encode %}
+                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">是</span>
+                        {% else %}
+                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">否</span>
+                        {% endif %}
+                    </dd>
+                </div>
+
+                {% if template.enable_encode %}
+                <div>
                     <dt class="text-sm font-medium text-gray-500">编码器类型</dt>
-                    <dd class="mt-1 text-sm text-gray-900">{{ template.encoder_type }}</dd>
+                    <dd class="mt-1 text-sm text-gray-900">{{ template.encoder_type or '未指定' }}</dd>
                 </div>
                 <div>
                     <dt class="text-sm font-medium text-gray-500">编码器路径</dt>
@@ -155,9 +173,14 @@
                 <div>
                     <dt class="text-sm font-medium text-gray-500">编码参数</dt>
                     <dd class="mt-1 text-sm text-gray-900 bg-gray-50 p-3 rounded font-mono break-all">
-                        {{ template.encoder_params }}
+                        {{ template.encoder_params or '未配置' }}
                     </dd>
                 </div>
+                {% else %}
+                <div class="text-sm text-gray-600">
+                    已选择跳过编码，将直接使用输出目录中的已编码文件进行质量指标计算。
+                </div>
+                {% endif %}
             </dl>
         </div>
 
@@ -166,24 +189,8 @@
             <h2 class="text-lg font-semibold text-gray-900 mb-4">输出配置</h2>
             <dl class="space-y-3">
                 <div>
-                    <dt class="text-sm font-medium text-gray-500">输出类型</dt>
-                    <dd class="mt-1 text-sm text-gray-900">
-                        {{ '同源视频类型' if template.output_type == 'same_as_source' else 'Raw Stream (h264/h265/h266等)' }}
-                    </dd>
-                </div>
-                <div>
                     <dt class="text-sm font-medium text-gray-500">输出目录</dt>
                     <dd class="mt-1 text-sm text-gray-900 font-mono break-all bg-gray-50 p-2 rounded">{{ template.output_dir }}</dd>
-                </div>
-                <div class="bg-blue-50 border border-blue-200 rounded p-2">
-                    <p class="text-xs text-blue-800">
-                        <strong>输出规则：</strong> 文件名 = 源文件前缀 + "_encode" + 扩展名<br>
-                        <strong>输出目录：</strong> 上方指定的输出目录
-                    </p>
-                </div>
-                <div>
-                    <dt class="text-sm font-medium text-gray-500">报告目录</dt>
-                    <dd class="mt-1 text-sm text-gray-900 font-mono break-all">{{ template.metrics_report_dir }}</dd>
                 </div>
             </dl>
         </div>
@@ -303,8 +310,7 @@
 const templateId = '{{ template.template_id }}';
 const templatePaths = {
     source_path: '{{ template.source_path }}',
-    output_dir: '{{ template.output_dir }}',
-    metrics_report_dir: '{{ template.metrics_report_dir }}'
+    output_dir: '{{ template.output_dir }}'
 };
 
 // Validate paths
@@ -346,15 +352,6 @@ function showValidationResults(result) {
             <span class="text-sm">
                 输出目录: ${result.output_dir_writable ? '可写' : '不可写'}
                 ${!result.output_dir_writable ? '<br><code class="text-xs bg-gray-100 px-1 rounded">' + templatePaths.output_dir + '</code>' : ''}
-            </span>
-        </div>
-        <div class="flex items-center space-x-2">
-            <svg class="w-5 h-5 ${result.metrics_dir_writable ? 'text-green-600' : 'text-red-600'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${result.metrics_dir_writable ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'}"></path>
-            </svg>
-            <span class="text-sm">
-                报告目录: ${result.metrics_dir_writable ? '可写' : '不可写'}
-                ${!result.metrics_dir_writable ? '<br><code class="text-xs bg-gray-100 px-1 rounded">' + templatePaths.metrics_report_dir + '</code>' : ''}
             </span>
         </div>
         <div class="mt-4 p-3 rounded ${result.all_valid ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}">

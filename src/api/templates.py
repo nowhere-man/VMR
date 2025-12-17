@@ -169,11 +169,10 @@ async def create_template(request: CreateTemplateRequest) -> CreateTemplateRespo
     - **name**: 模板名称
     - **description**: 模板描述
     - **sequence_type**: 序列类型（Media/YUV 420P）
-    - **encoder_type**: 编码器类型（ffmpeg/x264/x265/vvenc）
-    - **encoder_params**: 编码参数字符串
+    - **enable_encode**: 是否进行编码（不编码则直接使用输出目录中的已编码文件做指标）
+    - **encoder_type/params/path**: 编码相关参数（仅当进行编码时生效）
     - **source_path**: 源视频路径
-    - **output_type**: 输出类型
-    - **metrics_report_dir**: 报告目录
+    - **output_dir**: 输出目录（转码输出或已编码码流所在目录）
     """
     # 生成模板 ID
     template_id = template_storage.generate_template_id()
@@ -189,15 +188,19 @@ async def create_template(request: CreateTemplateRequest) -> CreateTemplateRespo
         fps=request.fps,
         source_path_type=request.source_path_type,
         source_path=request.source_path,
+        enable_encode=request.enable_encode,
         encoder_type=request.encoder_type,
         encoder_path=request.encoder_path,
         encoder_params=request.encoder_params,
-        output_type=request.output_type,
         output_dir=request.output_dir,
-        metrics_report_dir=request.metrics_report_dir,
         skip_metrics=request.skip_metrics,
         metrics_types=request.metrics_types,
     )
+
+    if not metadata.enable_encode:
+        metadata.encoder_type = None
+        metadata.encoder_params = None
+        metadata.encoder_path = None
 
     # 创建模板
     try:
@@ -240,12 +243,11 @@ async def get_template(template_id: str) -> TemplateResponse:
         fps=metadata.fps,
         source_path_type=metadata.source_path_type,
         source_path=metadata.source_path,
+        enable_encode=metadata.enable_encode,
         encoder_type=metadata.encoder_type,
         encoder_path=metadata.encoder_path,
         encoder_params=metadata.encoder_params,
-        output_type=metadata.output_type,
         output_dir=metadata.output_dir,
-        metrics_report_dir=metadata.metrics_report_dir,
         skip_metrics=metadata.skip_metrics,
         metrics_types=metadata.metrics_types,
         created_at=metadata.created_at,
@@ -323,22 +325,25 @@ async def update_template(
         template.metadata.source_path_type = request.source_path_type
     if request.source_path is not None:
         template.metadata.source_path = request.source_path
+    if request.enable_encode is not None:
+        template.metadata.enable_encode = request.enable_encode
     if request.encoder_type is not None:
         template.metadata.encoder_type = request.encoder_type
     if "encoder_path" in fields_set:
         template.metadata.encoder_path = request.encoder_path
     if request.encoder_params is not None:
         template.metadata.encoder_params = request.encoder_params
-    if request.output_type is not None:
-        template.metadata.output_type = request.output_type
     if request.output_dir is not None:
         template.metadata.output_dir = request.output_dir
-    if request.metrics_report_dir is not None:
-        template.metadata.metrics_report_dir = request.metrics_report_dir
     if request.skip_metrics is not None:
         template.metadata.skip_metrics = request.skip_metrics
     if request.metrics_types is not None:
         template.metadata.metrics_types = request.metrics_types
+
+    if template.metadata.enable_encode is False:
+        template.metadata.encoder_type = None
+        template.metadata.encoder_params = None
+        template.metadata.encoder_path = None
 
     # 保存更新
     template_storage.update_template(template)
@@ -355,12 +360,11 @@ async def update_template(
         fps=metadata.fps,
         source_path_type=metadata.source_path_type,
         source_path=metadata.source_path,
+        enable_encode=metadata.enable_encode,
         encoder_type=metadata.encoder_type,
         encoder_path=metadata.encoder_path,
         encoder_params=metadata.encoder_params,
-        output_type=metadata.output_type,
         output_dir=metadata.output_dir,
-        metrics_report_dir=metadata.metrics_report_dir,
         skip_metrics=metadata.skip_metrics,
         metrics_types=metadata.metrics_types,
         created_at=metadata.created_at,
@@ -412,7 +416,6 @@ async def validate_template(template_id: str) -> ValidateTemplateResponse:
         template_id=template_id,
         source_exists=validation_results["source_exists"],
         output_dir_writable=validation_results["output_dir_writable"],
-        metrics_dir_writable=validation_results["metrics_dir_writable"],
         all_valid=all_valid,
     )
 
@@ -496,6 +499,7 @@ async def execute_template(
                 template, source_files,
                 add_command_callback=add_command_log,
                 update_status_callback=update_command_status,
+                job=job,
             )
 
             # 保存执行结果
@@ -541,8 +545,8 @@ async def compare_templates(
     meta_a = template_a.metadata
     meta_b = template_b.metadata
 
-    # 验证编码器类型一致
-    if meta_a.encoder_type != meta_b.encoder_type:
+    # 验证编码器类型一致（仅当两个模板都需要编码时）
+    if meta_a.enable_encode and meta_b.enable_encode and meta_a.encoder_type != meta_b.encoder_type:
         raise HTTPException(status_code=400, detail="两个模板的编码器类型必须一致")
 
     # 验证质量指标设置一致

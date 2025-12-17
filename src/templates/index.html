@@ -225,10 +225,11 @@ function updateTemplateInfo() {
     }
 
     const description = tpl.description ? tpl.description : '该模板未填写描述';
+    const encoderLabel = tpl.encoder_type ? tpl.encoder_type.toUpperCase() : '跳过编码';
     templateInfo.innerHTML = `
         <div class="space-y-1">
             <p><span class="font-medium text-gray-700">描述：</span>${escapeHtml(description)}</p>
-            <p class="text-sm text-gray-500">编码器类型：${tpl.encoder_type.toUpperCase()}</p>
+            <p class="text-sm text-gray-500">编码器类型：${encoderLabel}</p>
             <p class="text-xs text-gray-400">模板 ID：${tpl.template_id}</p>
         </div>
     `;

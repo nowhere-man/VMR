@@ -54,8 +54,8 @@
                     </label>
                     <select id="sequence_type" name="sequence_type" required
                         class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <option value="media">Media（容器格式：mp4、flv等）</option>
-                        <option value="yuv420p" selected>YUV 420P（原始格式）</option>
+                        <option value="media" selected>Media（容器格式：mp4、flv等）</option>
+                        <option value="yuv420p">YUV 420P（原始格式）</option>
                     </select>
                     <p class="mt-1 text-xs text-gray-500">
                         <strong>Media:</strong> 容器格式，宽、高、fps 可从文件中获取<br>
@@ -108,9 +108,9 @@
                     </label>
                     <select id="source_path_type" name="source_path_type" required
                         class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="directory" selected>目录（转码所有视频）</option>
                         <option value="single_file">单文件</option>
                         <option value="multiple_files">多文件（逗号分隔）</option>
-                        <option value="directory">目录（转码所有视频）</option>
                     </select>
                 </div>
 
@@ -136,15 +136,21 @@
 
         <!-- 第三大类：编码配置 -->
         <div class="border-b border-gray-200 pb-6">
-            <h2 class="text-lg font-semibold text-gray-900 mb-4">编码配置</h2>
+            <div class="flex items-center justify-between mb-2">
+                <h2 class="text-lg font-semibold text-gray-900">编码配置</h2>
+                <label class="flex items-center text-sm text-gray-700 space-x-2">
+                    <input type="checkbox" id="enable_encode" name="enable_encode" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" checked>
+                    <span>是否进行编码</span>
+                </label>
+            </div>
 
-            <div class="space-y-4">
+            <div id="encodeConfig" class="space-y-4">
                 <!-- Encoder Type -->
                 <div>
                     <label for="encoder_type" class="block text-sm font-medium text-gray-700 mb-1">
                         编码器类型 <span class="text-red-500">*</span>
                     </label>
-                    <select id="encoder_type" name="encoder_type" required
+                    <select id="encoder_type" name="encoder_type"
                         class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="">请选择</option>
                         <option value="ffmpeg">FFmpeg</option>
@@ -171,7 +177,7 @@
                     <label for="encoder_params" class="block text-sm font-medium text-gray-700 mb-1">
                         编码参数 <span class="text-red-500">*</span>
                     </label>
-                    <textarea id="encoder_params" name="encoder_params" rows="3" required maxlength="2000"
+                    <textarea id="encoder_params" name="encoder_params" rows="3" maxlength="2000"
                         class="w-full border border-gray-300 rounded-md px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="例如: -c:v libx264 -preset slow -crf 18"></textarea>
                     <p class="mt-1 text-xs text-gray-500">参数字符串直接传给编码器，最多 2000 字符</p>
@@ -195,22 +201,6 @@
             <h2 class="text-lg font-semibold text-gray-900 mb-4">输出配置</h2>
 
             <div class="space-y-4">
-                <!-- Output Type -->
-                <div>
-                    <label for="output_type" class="block text-sm font-medium text-gray-700 mb-1">
-                        输出类型 <span class="text-red-500">*</span>
-                    </label>
-                    <select id="output_type" name="output_type" required
-                        class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <option value="same_as_source">同源视频类型</option>
-                        <option value="raw_stream" selected>Raw Stream (h264/h265/h266等)</option>
-                    </select>
-                    <p class="mt-1 text-xs text-gray-500">
-                        <strong>同源视频类型:</strong> 只有当序列类型是 Media 时可选<br>
-                        <strong>Raw Stream:</strong> 输出 h264、h265、h266 等原始流
-                    </p>
-                </div>
-
                 <!-- Output Directory -->
                 <div>
                     <label for="output_dir" class="block text-sm font-medium text-gray-700 mb-1">
@@ -219,25 +209,7 @@
                     <input type="text" id="output_dir" name="output_dir" required
                         class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="/path/to/output">
-                    <p class="mt-1 text-xs text-gray-500">保存转码输出的码流文件的目录</p>
-                </div>
-
-                <div class="bg-blue-50 border border-blue-200 rounded-md p-3">
-                    <p class="text-sm text-blue-800">
-                        <strong>输出文件规则：</strong>转码后视频文件名 = 源视频前缀 + "_encode" + 扩展名<br>
-                        输出文件保存到上方指定的输出目录中
-                    </p>
-                </div>
-
-                <!-- Metrics Report Dir -->
-                <div>
-                    <label for="metrics_report_dir" class="block text-sm font-medium text-gray-700 mb-1">
-                        报告目录 <span class="text-red-500">*</span>
-                    </label>
-                    <input type="text" id="metrics_report_dir" name="metrics_report_dir" required
-                        class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="/path/to/reports">
-                    <p class="mt-1 text-xs text-gray-500">保存 Streamlit 生成的报告的路径</p>
+                    <p class="mt-1 text-xs text-gray-500">保存转码输出的码流；若“是否进行编码”未勾选，则此目录应包含已编码文件。</p>
                 </div>
             </div>
         </div>
@@ -310,34 +282,41 @@
 <script>
 const isEditMode = {{ 'true' if template_id else 'false' }};
 const templateId = {{ template_id|tojson if template_id else 'null' }};
+const enableEncodeCheckbox = document.getElementById('enable_encode');
+const encodeConfigBlock = document.getElementById('encodeConfig');
 
 // Update UI based on sequence type
 function updateSequenceTypeUI() {
     const sequenceType = document.getElementById('sequence_type').value;
     const yuvParamsSection = document.getElementById('yuvParamsSection');
-    const outputType = document.getElementById('output_type');
 
     if (sequenceType === 'yuv420p') {
         yuvParamsSection.classList.remove('hidden');
         document.getElementById('width').required = true;
         document.getElementById('height').required = true;
         document.getElementById('fps').required = true;
-
-        // YUV类型不能选择"同源视频类型"
-        if (outputType.value === 'same_as_source') {
-            outputType.value = 'raw_stream';
-        }
-        // 禁用"同源视频类型"选项
-        outputType.querySelector('option[value="same_as_source"]').disabled = true;
     } else {
         yuvParamsSection.classList.add('hidden');
         document.getElementById('width').required = false;
         document.getElementById('height').required = false;
         document.getElementById('fps').required = false;
-
-        // 启用"同源视频类型"选项
-        outputType.querySelector('option[value="same_as_source"]').disabled = false;
     }
+}
+
+// 控制编码配置显示/必填
+function updateEncodeUI() {
+    const enabled = document.getElementById('enable_encode').checked;
+    const block = document.getElementById('encodeConfig');
+    block.classList.toggle('hidden', !enabled);
+    ['encoder_type', 'encoder_params'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (enabled) {
+            el.setAttribute('required', 'required');
+        } else {
+            el.removeAttribute('required');
+        }
+    });
 }
 
 // Update UI based on skip_metrics checkbox
@@ -393,18 +372,17 @@ async function loadTemplate() {
 function populateForm(template) {
     document.getElementById('name').value = template.name || '';
     document.getElementById('description').value = template.description || '';
-    document.getElementById('sequence_type').value = template.sequence_type || 'yuv420p';
+    document.getElementById('sequence_type').value = template.sequence_type || 'media';
     document.getElementById('width').value = template.width || '';
     document.getElementById('height').value = template.height || '';
     document.getElementById('fps').value = template.fps || '';
-    document.getElementById('source_path_type').value = template.source_path_type || 'single_file';
+    document.getElementById('source_path_type').value = template.source_path_type || 'directory';
     document.getElementById('source_path').value = template.source_path || '';
+    document.getElementById('enable_encode').checked = template.enable_encode !== false;
     document.getElementById('encoder_type').value = template.encoder_type || '';
     document.getElementById('encoder_path').value = template.encoder_path || '';
     document.getElementById('encoder_params').value = template.encoder_params || '';
-    document.getElementById('output_type').value = template.output_type || 'raw_stream';
     document.getElementById('output_dir').value = template.output_dir || '';
-    document.getElementById('metrics_report_dir').value = template.metrics_report_dir || '';
     document.getElementById('skip_metrics').checked = template.skip_metrics || false;
 
     // Set metrics types
@@ -415,6 +393,7 @@ function populateForm(template) {
     // Update UI
     updateSequenceTypeUI();
     updateSkipMetricsUI();
+    updateEncodeUI();
     updateSourcePathHelp();
 }
 
@@ -425,6 +404,7 @@ document.getElementById('templateForm').addEventListener('submit', async (e) => 
     // Collect form data
     const sequenceType = document.getElementById('sequence_type').value;
     const skipMetrics = document.getElementById('skip_metrics').checked;
+    const enableEncode = document.getElementById('enable_encode').checked;
 
     const formData = {
         name: document.getElementById('name').value,
@@ -432,11 +412,10 @@ document.getElementById('templateForm').addEventListener('submit', async (e) => 
         sequence_type: sequenceType,
         source_path_type: document.getElementById('source_path_type').value,
         source_path: document.getElementById('source_path').value,
+        enable_encode: enableEncode,
         encoder_type: document.getElementById('encoder_type').value,
         encoder_params: document.getElementById('encoder_params').value,
-        output_type: document.getElementById('output_type').value,
         output_dir: document.getElementById('output_dir').value,
-        metrics_report_dir: document.getElementById('metrics_report_dir').value,
         skip_metrics: skipMetrics
     };
 
@@ -455,6 +434,12 @@ document.getElementById('templateForm').addEventListener('submit', async (e) => 
         formData.encoder_path = null;
     }
 
+    if (!enableEncode) {
+        formData.encoder_type = null;
+        formData.encoder_params = null;
+        formData.encoder_path = null;
+    }
+
     // Collect metrics types if not skipping
     if (!skipMetrics) {
         const metricsTypes = [];
@@ -470,12 +455,6 @@ document.getElementById('templateForm').addEventListener('submit', async (e) => 
         formData.metrics_types = metricsTypes;
     } else {
         formData.metrics_types = [];
-    }
-
-    // Validate output_type for YUV
-    if (sequenceType === 'yuv420p' && formData.output_type === 'same_as_source') {
-        alert('YUV 420P 类型不能选择"同源视频类型"');
-        return;
     }
 
     // Show loading
@@ -513,10 +492,12 @@ document.getElementById('templateForm').addEventListener('submit', async (e) => 
 document.getElementById('sequence_type').addEventListener('change', updateSequenceTypeUI);
 document.getElementById('skip_metrics').addEventListener('change', updateSkipMetricsUI);
 document.getElementById('source_path_type').addEventListener('change', updateSourcePathHelp);
+document.getElementById('enable_encode').addEventListener('change', updateEncodeUI);
 
 // Initialize UI
 updateSequenceTypeUI();
 updateSkipMetricsUI();
+updateEncodeUI();
 updateSourcePathHelp();
 
 // Load template data on page load (edit mode)

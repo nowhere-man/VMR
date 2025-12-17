@@ -160,8 +160,42 @@ class TaskProcessor:
         """
         from .storage import job_storage
         from .bitstream_analysis import analyze_bitstream_job
+        from src.models import CommandLog, CommandStatus
+        from nanoid import generate
 
-        report_data, summary = await analyze_bitstream_job(job)
+        # 命令状态更新回调
+        def update_command_status(command_id: str, status: str, error: str = None):
+            for cmd_log in job.metadata.command_logs:
+                if cmd_log.command_id == command_id:
+                    cmd_log.status = CommandStatus(status)
+                    if status == "running":
+                        cmd_log.started_at = datetime.utcnow()
+                    elif status in ("completed", "failed"):
+                        cmd_log.completed_at = datetime.utcnow()
+                    if error:
+                        cmd_log.error_message = error
+                    break
+            job_storage.update_job(job)
+
+        # 添加命令日志
+        def add_command_log(command_type: str, command: str, source_file: str = None) -> str:
+            command_id = generate(size=8)
+            cmd_log = CommandLog(
+                command_id=command_id,
+                command_type=command_type,
+                command=command,
+                status=CommandStatus.PENDING,
+                source_file=source_file,
+            )
+            job.metadata.command_logs.append(cmd_log)
+            job_storage.update_job(job)
+            return command_id
+
+        report_data, summary = await analyze_bitstream_job(
+            job,
+            add_command_callback=add_command_log,
+            update_status_callback=update_command_status,
+        )
 
         # 写入报告数据文件（供 Streamlit 使用）
         report_rel_path = summary.get("report_data_file")

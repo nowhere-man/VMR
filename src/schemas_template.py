@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from src.models_template import EncoderType, SequenceType, SourcePathType, OutputType
+from src.models_template import EncoderType, SequenceType, SourcePathType
 
 
 class CreateTemplateRequest(BaseModel):
@@ -27,14 +27,13 @@ class CreateTemplateRequest(BaseModel):
     source_path: str = Field(..., min_length=1, description="源视频路径")
 
     # 第三大类：编码配置
-    encoder_type: EncoderType = Field(..., description="编码器类型（ffmpeg/x264/x265/vvenc）")
+    enable_encode: bool = Field(default=True, description="是否进行编码")
+    encoder_type: Optional[EncoderType] = Field(None, description="编码器类型（ffmpeg/x264/x265/vvenc）")
     encoder_path: Optional[str] = Field(None, max_length=500, description="编码器可执行文件路径（可选）")
-    encoder_params: str = Field(..., max_length=2000, description="编码参数（直接传给编码器）")
+    encoder_params: Optional[str] = Field(None, max_length=2000, description="编码参数（直接传给编码器）")
 
     # 第四大类：输出配置
-    output_type: OutputType = Field(..., description="输出类型（同源视频类型/Raw Stream）")
-    output_dir: str = Field(..., min_length=1, description="输出目录（保存转码输出的码流）")
-    metrics_report_dir: str = Field(..., min_length=1, description="报告目录")
+    output_dir: str = Field(..., min_length=1, description="输出目录（保存转码输出或已编码码流）")
 
     # 第五大类：质量指标配置
     skip_metrics: bool = Field(default=False, description="是否跳过质量指标计算")
@@ -59,14 +58,13 @@ class UpdateTemplateRequest(BaseModel):
     source_path: Optional[str] = Field(None, min_length=1, description="源视频路径")
 
     # 第三大类：编码配置
+    enable_encode: Optional[bool] = Field(None, description="是否进行编码")
     encoder_type: Optional[EncoderType] = Field(None, description="编码器类型（ffmpeg/x264/x265/vvenc）")
     encoder_path: Optional[str] = Field(None, max_length=500, description="编码器可执行文件路径（可选）")
     encoder_params: Optional[str] = Field(None, max_length=2000, description="编码参数（直接传给编码器）")
 
     # 第四大类：输出配置
-    output_type: Optional[OutputType] = Field(None, description="输出类型（同源视频类型/Raw Stream）")
-    output_dir: Optional[str] = Field(None, min_length=1, description="输出目录（保存转码输出的码流）")
-    metrics_report_dir: Optional[str] = Field(None, min_length=1, description="报告目录")
+    output_dir: Optional[str] = Field(None, min_length=1, description="输出目录（保存转码输出或已编码码流）")
 
     # 第五大类：质量指标配置
     skip_metrics: Optional[bool] = Field(None, description="是否跳过质量指标计算")
@@ -91,14 +89,13 @@ class TemplateResponse(BaseModel):
     source_path: str = Field(..., description="源视频路径")
 
     # 第三大类：编码配置
-    encoder_type: EncoderType = Field(..., description="编码器类型（ffmpeg/x264/x265/vvenc）")
+    enable_encode: bool = Field(..., description="是否进行编码")
+    encoder_type: Optional[EncoderType] = Field(None, description="编码器类型（ffmpeg/x264/x265/vvenc）")
     encoder_path: Optional[str] = Field(None, description="编码器可执行文件路径（可选）")
-    encoder_params: str = Field(..., description="编码参数（直接传给编码器）")
+    encoder_params: Optional[str] = Field(None, description="编码参数（直接传给编码器）")
 
     # 第四大类：输出配置
-    output_type: OutputType = Field(..., description="输出类型（同源视频类型/Raw Stream）")
-    output_dir: str = Field(..., description="输出目录（保存转码输出的码流）")
-    metrics_report_dir: str = Field(..., description="报告目录")
+    output_dir: str = Field(..., description="输出目录（保存转码输出或已编码码流）")
 
     # 第五大类：质量指标配置
     skip_metrics: bool = Field(..., description="是否跳过质量指标计算")
@@ -114,7 +111,9 @@ class TemplateExecutionFileResult(BaseModel):
 
     source_file: str = Field(..., description="源文件路径")
     output_file: str = Field(..., description="输出文件路径")
-    encoder_type: EncoderType = Field(..., description="编码器类型")
+    encoder_type: Optional[EncoderType] = Field(
+        None, description="编码器类型（不进行编码时为空）"
+    )
     elapsed_seconds: float = Field(..., description="耗时（秒）")
     cpu_time_seconds: Optional[float] = Field(
         None, description="CPU 时间（秒）"
@@ -200,7 +199,9 @@ class TemplateListItem(BaseModel):
     name: str = Field(..., description="模板名称")
     description: Optional[str] = Field(None, description="模板描述")
     sequence_type: SequenceType = Field(..., description="序列类型")
-    encoder_type: EncoderType = Field(..., description="编码器类型")
+    encoder_type: Optional[EncoderType] = Field(
+        None, description="编码器类型（不编码时为空）"
+    )
     created_at: datetime = Field(..., description="创建时间")
 
 
@@ -218,5 +219,4 @@ class ValidateTemplateResponse(BaseModel):
     template_id: str = Field(..., description="模板 ID")
     source_exists: bool = Field(..., description="源路径是否存在")
     output_dir_writable: bool = Field(..., description="输出目录是否可写")
-    metrics_dir_writable: bool = Field(..., description="报告目录是否可写")
     all_valid: bool = Field(..., description="所有路径是否都有效")

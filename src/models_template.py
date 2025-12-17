@@ -35,13 +35,6 @@ class SourcePathType(str, Enum):
     DIRECTORY = "directory"  # 目录
 
 
-class OutputType(str, Enum):
-    """输出类型枚举"""
-
-    SAME_AS_SOURCE = "same_as_source"  # 同源视频类型
-    RAW_STREAM = "raw_stream"  # 原始流（h264/h265/h266等）
-
-
 class EncodingTemplateMetadata(BaseModel):
     """转码模板元数据（持久化到 JSON）"""
 
@@ -60,14 +53,13 @@ class EncodingTemplateMetadata(BaseModel):
     source_path: str = Field(..., min_length=1, description="源视频路径")
 
     # 第三大类：编码配置
-    encoder_type: EncoderType = Field(..., description="编码器类型（ffmpeg/x264/x265/vvenc）")
+    enable_encode: bool = Field(default=True, description="是否进行编码")
+    encoder_type: Optional[EncoderType] = Field(None, description="编码器类型（ffmpeg/x264/x265/vvenc）")
     encoder_path: Optional[str] = Field(None, description="编码器可执行文件路径（可选）")
-    encoder_params: str = Field(..., max_length=2000, description="编码参数（直接传给编码器）")
+    encoder_params: Optional[str] = Field(None, max_length=2000, description="编码参数（直接传给编码器）")
 
-    # 第四大类：输出配置
-    output_type: OutputType = Field(..., description="输出类型（同源视频类型/Raw Stream）")
-    output_dir: str = Field(..., min_length=1, description="输出目录（保存转码输出的码流）")
-    metrics_report_dir: str = Field(..., min_length=1, description="报告目录（保存Streamlit生成的报告）")
+    # 第四大类：输出配置（仅输出目录）
+    output_dir: str = Field(..., min_length=1, description="输出目录（保存转码输出或已编码码流）")
 
     # 第五大类：质量指标配置
     skip_metrics: bool = Field(default=False, description="是否跳过质量指标计算")
@@ -91,7 +83,7 @@ class EncodingTemplateMetadata(BaseModel):
             )
         return v
 
-    @field_validator("source_path", "output_dir", "metrics_report_dir")
+    @field_validator("source_path", "output_dir")
     @classmethod
     def validate_path_not_empty(cls, v: str) -> str:
         """验证路径不为空"""
@@ -119,16 +111,19 @@ class EncodingTemplateMetadata(BaseModel):
             if not self.fps:
                 raise ValueError("YUV 420P类型必须指定帧率（fps）")
 
-        # 同源视频类型只能在Media类型时使用
-        if self.output_type == OutputType.SAME_AS_SOURCE:
-            if self.sequence_type != SequenceType.MEDIA:
-                raise ValueError("输出类型为'同源视频类型'时，序列类型必须为Media")
-
         # 如果不跳过质量指标，必须指定至少一个指标类型
         if not self.skip_metrics and not self.metrics_types:
             raise ValueError("启用质量指标计算时必须至少选择一个指标类型（PSNR/SSIM/VMAF）")
 
+        # 如果需要编码，则编码参数/类型必须提供
+        if self.enable_encode:
+            if not self.encoder_type:
+                raise ValueError("进行编码时必须指定编码器类型")
+            if not self.encoder_params:
+                raise ValueError("进行编码时必须填写编码参数")
+
     model_config = ConfigDict(
+        extra="ignore",
         json_encoders={
             datetime: lambda v: v.isoformat(),
         }
@@ -164,12 +159,7 @@ class EncodingTemplate(BaseModel):
         """
         results = {
             "source_exists": Path(self.metadata.source_path).exists(),
-            "output_dir_writable": self._check_dir_writable(
-                self.metadata.output_dir
-            ),
-            "metrics_dir_writable": self._check_dir_writable(
-                self.metadata.metrics_report_dir
-            ),
+            "output_dir_writable": self._check_dir_writable(self.metadata.output_dir),
         }
         return results
 

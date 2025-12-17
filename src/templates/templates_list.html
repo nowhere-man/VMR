@@ -156,6 +156,9 @@ function createTemplateCard(template) {
         'yuv420p': 'bg-purple-100 text-purple-800'
     };
 
+    const encoderLabel = template.encoder_type ? template.encoder_type.toUpperCase() : '跳过编码';
+    const encoderChipClass = template.encoder_type ? (encoderColors[template.encoder_type] || 'bg-gray-100 text-gray-800') : 'bg-gray-100 text-gray-800';
+
     div.innerHTML = `
         <div class="flex justify-between items-start mb-3">
             <h3 class="text-lg font-semibold text-gray-900 truncate flex-1">${escapeHtml(template.name)}</h3>
@@ -163,8 +166,8 @@ function createTemplateCard(template) {
                 <span class="px-2 py-1 rounded text-xs font-medium ${sequenceColors[template.sequence_type] || 'bg-gray-100 text-gray-800'}">
                     ${template.sequence_type === 'media' ? 'Media' : 'YUV'}
                 </span>
-                <span class="px-2 py-1 rounded text-xs font-medium ${encoderColors[template.encoder_type] || 'bg-gray-100 text-gray-800'}">
-                    ${template.encoder_type.toUpperCase()}
+                <span class="px-2 py-1 rounded text-xs font-medium ${encoderChipClass}">
+                    ${encoderLabel}
                 </span>
             </div>
         </div>

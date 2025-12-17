@@ -22,60 +22,12 @@ class ReportScanner:
         Returns:
             报告数据列表
         """
-        reports = []
-        templates = template_storage.list_templates()
-
-        for template in templates:
-            template_reports = self._scan_template_reports(template)
-            reports.extend(template_reports)
-
-        # 按时间排序（最新的在前）
-        reports.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
-        return reports
+        # 目前报告由 Streamlit 基于 jobs 输出，这里返回空列表以停用旧扫描逻辑
+        return []
 
     def _scan_template_reports(self, template) -> List[Dict]:
         """扫描单个模板的报告"""
-        reports = []
-        metadata = template.metadata
-
-        # 获取metrics报告目录
-        metrics_dir = Path(metadata.metrics_report_dir)
-        if not metrics_dir.exists():
-            return reports
-
-        # 扫描所有PSNR、SSIM、VMAF文件
-        psnr_files = list(metrics_dir.glob("*_psnr.log"))
-        ssim_files = list(metrics_dir.glob("*_ssim.log"))
-        vmaf_files = list(metrics_dir.glob("*_vmaf.json"))
-
-        # 按文件名前缀分组
-        file_groups = {}
-
-        for psnr_file in psnr_files:
-            prefix = psnr_file.stem.replace("_psnr", "")
-            if prefix not in file_groups:
-                file_groups[prefix] = {}
-            file_groups[prefix]["psnr"] = psnr_file
-
-        for ssim_file in ssim_files:
-            prefix = ssim_file.stem.replace("_ssim", "")
-            if prefix not in file_groups:
-                file_groups[prefix] = {}
-            file_groups[prefix]["ssim"] = ssim_file
-
-        for vmaf_file in vmaf_files:
-            prefix = vmaf_file.stem.replace("_vmaf", "")
-            if prefix not in file_groups:
-                file_groups[prefix] = {}
-            file_groups[prefix]["vmaf"] = vmaf_file
-
-        # 为每组文件创建报告条目
-        for prefix, files in file_groups.items():
-            report = self._create_report_entry(template, prefix, files)
-            if report:
-                reports.append(report)
-
-        return reports
+        return []
 
     def _create_report_entry(
         self, template, file_prefix: str, metric_files: Dict[str, Path]

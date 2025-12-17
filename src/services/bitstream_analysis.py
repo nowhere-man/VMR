@@ -227,37 +227,45 @@ async def _infer_input_format(path: Path) -> Optional[str]:
     raise RuntimeError(f"无法识别码流格式（仅支持 h264/h265 或容器格式）: {path.name}")
 
 
-async def analyze_bitstream_job(job: Job) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+async def build_bitstream_report(
+    reference_path: Path,
+    encoded_paths: List[Path],
+    analysis_dir: Path,
+    raw_width: Optional[int] = None,
+    raw_height: Optional[int] = None,
+    raw_fps: Optional[float] = None,
+    raw_pix_fmt: str = "yuv420p",
+    add_command_callback=None,
+    update_status_callback=None,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
-    执行码流分析，返回：
-    - report_data: 用于 Streamlit 展示的完整数据（包含逐帧）
-    - summary: 写入 metadata.execution_result 的轻量摘要（不包含逐帧）
+    通用码流分析逻辑（可供模板任务与码流分析任务复用）
+
+    Args:
+        reference_path: 参考视频路径
+        encoded_paths: 已编码视频路径列表
+        analysis_dir: 输出目录（会生成 yuv、日志及 report_data.json）
+        raw_width/raw_height/raw_fps: 参考为 YUV 时必填
+        raw_pix_fmt: 参考 YUV 像素格式
+        add_command_callback/update_status_callback: 可选的命令日志回调
     """
-    ref_input = job.get_reference_path()
-    if not ref_input or not ref_input.exists():
-        raise FileNotFoundError("参考视频不存在")
-
-    encoded_inputs = [job.job_dir / v.filename for v in job.metadata.encoded_videos]
-    if not encoded_inputs:
-        raise ValueError("未提供任何编码视频")
-
-    analysis_dir = job.job_dir / "bitstream_analysis"
     analysis_dir.mkdir(parents=True, exist_ok=True)
 
-    raw_w = job.metadata.rawvideo_width
-    raw_h = job.metadata.rawvideo_height
-    raw_fps = job.metadata.rawvideo_fps
-    raw_pix_fmt = job.metadata.rawvideo_pix_fmt or "yuv420p"
+    if not reference_path.exists():
+        raise FileNotFoundError("参考视频不存在")
+
+    if not encoded_paths:
+        raise ValueError("未提供任何编码视频")
 
     # 1) 准备参考 yuv420p
-    if _is_yuv(ref_input):
-        if raw_w is None or raw_h is None or raw_fps is None:
+    if _is_yuv(reference_path):
+        if raw_width is None or raw_height is None or raw_fps is None:
             raise ValueError("参考视频为 .yuv，必须提供 width/height/fps")
-        ref_width, ref_height, ref_fps = raw_w, raw_h, float(raw_fps)
-        ref_yuv = ref_input
+        ref_width, ref_height, ref_fps = raw_width, raw_height, float(raw_fps)
+        ref_yuv = reference_path
     else:
-        ref_fmt = await _infer_input_format(ref_input)
-        ref_info = await ffmpeg_service.get_video_info(ref_input, input_format=ref_fmt)
+        ref_fmt = await _infer_input_format(reference_path)
+        ref_info = await ffmpeg_service.get_video_info(reference_path, input_format=ref_fmt)
         ref_width = int(ref_info.get("width") or 0)
         ref_height = int(ref_info.get("height") or 0)
         ref_fps_val = ref_info.get("fps")
@@ -268,18 +276,34 @@ async def analyze_bitstream_job(job: Job) -> Tuple[Dict[str, Any], Dict[str, Any
         ref_fps = float(ref_fps_val)
         ref_yuv = analysis_dir / "ref_yuv420p.yuv"
         await ffmpeg_service.decode_to_yuv420p(
-            ref_input,
+            reference_path,
             ref_yuv,
             input_format=ref_fmt,
         )
 
     ref_frames_total = _count_yuv420p_frames(ref_yuv, ref_width, ref_height)
 
+    # 命令日志包装
+    async def _run_logged(cmd: List[str], cmd_type: str):
+        cmd_id = None
+        if add_command_callback:
+            cmd_id = add_command_callback(cmd_type, " ".join(cmd), str(reference_path))
+        if update_status_callback and cmd_id:
+            update_status_callback(cmd_id, "running")
+        try:
+            await _run_subprocess(cmd)
+            if update_status_callback and cmd_id:
+                update_status_callback(cmd_id, "completed")
+        except Exception as exc:
+            if update_status_callback and cmd_id:
+                update_status_callback(cmd_id, "failed", str(exc))
+            raise
+
     # 2) 对每个 Encoded：转换到 yuv420p（必要时上采样），并计算指标与码率
     encoded_reports: List[Dict[str, Any]] = []
     encoded_summaries: List[Dict[str, Any]] = []
 
-    for idx, enc_input in enumerate(encoded_inputs):
+    for idx, enc_input in enumerate(encoded_paths):
         if not enc_input.exists():
             raise FileNotFoundError(f"编码视频不存在: {enc_input.name}")
 
@@ -294,9 +318,9 @@ async def analyze_bitstream_job(job: Job) -> Tuple[Dict[str, Any], Dict[str, Any
         enc_fps: Optional[float] = None
 
         if enc_is_yuv:
-            if raw_w is None or raw_h is None or raw_fps is None:
+            if raw_width is None or raw_height is None or raw_fps is None:
                 raise ValueError("检测到 .yuv Encoded，必须提供 width/height/fps")
-            enc_width, enc_height, enc_fps = raw_w, raw_h, float(raw_fps)
+            enc_width, enc_height, enc_fps = raw_width, raw_height, float(raw_fps)
         else:
             enc_fmt = await _infer_input_format(enc_input)
             info = await ffmpeg_service.get_video_info(enc_input, input_format=enc_fmt)
@@ -375,7 +399,7 @@ async def analyze_bitstream_job(job: Job) -> Tuple[Dict[str, Any], Dict[str, Any
 
         limit_args = ["-frames:v", str(frames_used)] if frame_mismatch else []
 
-        await _run_subprocess(
+        await _run_logged(
             raw_ref_args
             + [
                 "-filter_complex",
@@ -386,9 +410,10 @@ async def analyze_bitstream_job(job: Job) -> Tuple[Dict[str, Any], Dict[str, Any
                 "-f",
                 "null",
                 "-",
-            ]
+            ],
+            "psnr",
         )
-        await _run_subprocess(
+        await _run_logged(
             raw_ref_args
             + [
                 "-filter_complex",
@@ -399,7 +424,8 @@ async def analyze_bitstream_job(job: Job) -> Tuple[Dict[str, Any], Dict[str, Any
                 "-f",
                 "null",
                 "-",
-            ]
+            ],
+            "ssim",
         )
 
         model_value = (
@@ -408,7 +434,7 @@ async def analyze_bitstream_job(job: Job) -> Tuple[Dict[str, Any], Dict[str, Any
         vmaf_filter = (
             f"libvmaf='model={model_value}':n_threads=8:log_fmt=json:log_path={vmaf_json}"
         )
-        await _run_subprocess(
+        await _run_logged(
             raw_ref_args
             + [
                 "-filter_complex",
@@ -419,7 +445,8 @@ async def analyze_bitstream_job(job: Job) -> Tuple[Dict[str, Any], Dict[str, Any
                 "-f",
                 "null",
                 "-",
-            ]
+            ],
+            "vmaf",
         )
 
         psnr_data = _parse_psnr_stats(psnr_log)
@@ -495,9 +522,8 @@ async def analyze_bitstream_job(job: Job) -> Tuple[Dict[str, Any], Dict[str, Any
 
     report_data: Dict[str, Any] = {
         "kind": "bitstream_analysis",
-        "job_id": job.job_id,
         "reference": {
-            "label": ref_input.name,
+            "label": reference_path.name,
             "width": ref_width,
             "height": ref_height,
             "fps": ref_fps,
@@ -510,9 +536,50 @@ async def analyze_bitstream_job(job: Job) -> Tuple[Dict[str, Any], Dict[str, Any
 
     summary: Dict[str, Any] = {
         "type": "bitstream_analysis",
-        "report_data_file": str((analysis_dir / "report_data.json").relative_to(job.job_dir)),
         "reference": report_data["reference"],
         "encoded": encoded_summaries,
     }
+
+    return report_data, summary
+
+
+async def analyze_bitstream_job(
+    job: Job,
+    add_command_callback=None,
+    update_status_callback=None,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """
+    执行码流分析，返回：
+    - report_data: 用于 Streamlit 展示的完整数据（包含逐帧）
+    - summary: 写入 metadata.execution_result 的轻量摘要（不包含逐帧）
+    """
+    ref_input = job.get_reference_path()
+    if not ref_input or not ref_input.exists():
+        raise FileNotFoundError("参考视频不存在")
+
+    analysis_dir = job.job_dir / "bitstream_analysis"
+    encoded_inputs = [job.job_dir / v.filename for v in job.metadata.encoded_videos]
+    if not encoded_inputs:
+        raise ValueError("未提供任何编码视频")
+
+    raw_w = job.metadata.rawvideo_width
+    raw_h = job.metadata.rawvideo_height
+    raw_fps = job.metadata.rawvideo_fps
+    raw_pix_fmt = job.metadata.rawvideo_pix_fmt or "yuv420p"
+
+    report_data, summary = await build_bitstream_report(
+        reference_path=ref_input,
+        encoded_paths=encoded_inputs,
+        analysis_dir=analysis_dir,
+        raw_width=raw_w,
+        raw_height=raw_h,
+        raw_fps=raw_fps,
+        raw_pix_fmt=raw_pix_fmt,
+        add_command_callback=add_command_callback,
+        update_status_callback=update_status_callback,
+    )
+
+    summary["report_data_file"] = str((analysis_dir / "report_data.json").relative_to(job.job_dir))
+    report_data["job_id"] = job.job_id
 
     return report_data, summary

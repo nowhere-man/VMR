@@ -4,15 +4,20 @@
 使用转码模板执行视频编码任务
 """
 import asyncio
+import json
 import logging
 import os
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
 import psutil
 
-from src.models_template import EncodingTemplate, EncoderType, SequenceType, OutputType, SourcePathType
+from src.models_template import EncodingTemplate, EncoderType, SequenceType
+from src.services.bitstream_analysis import build_bitstream_report
+
+if TYPE_CHECKING:
+    from src.models import Job
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +36,7 @@ class TemplateEncoderService:
 
     async def encode_with_template(
         self, template: EncodingTemplate, source_files: Optional[List[Path]] = None,
-        add_command_callback=None, update_status_callback=None
+        add_command_callback=None, update_status_callback=None, job: Optional["Job"] = None
     ) -> dict:
         """
         使用模板执行转码任务
@@ -56,27 +61,46 @@ class TemplateEncoderService:
             f"使用模板 {template.name} 转码 {len(source_files)} 个文件"
         )
 
-        # 准备报告目录（如果需要计算质量指标）
-        if not template.metadata.skip_metrics:
-            metrics_dir = Path(template.metadata.metrics_report_dir)
-            metrics_dir.mkdir(parents=True, exist_ok=True)
-
         # 准备输出目录
         output_dir = Path(template.metadata.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
+
+        analysis_base_dir = (
+            (job.job_dir / "bitstream_analysis") if job else (output_dir / "metrics_analysis")
+        )
+        analysis_base_dir.mkdir(parents=True, exist_ok=True)
+        report_payload: Optional[tuple[dict, dict]] = None
 
         # 执行转码任务
         results = []
         failed = []
 
         # 串行执行（简化处理，如需并行可后续扩展）
-        for source_file in source_files:
+        for idx, source_file in enumerate(source_files):
+            analysis_dir = analysis_base_dir if idx == 0 else analysis_base_dir / f"source_{idx+1}"
+            analysis_dir.mkdir(parents=True, exist_ok=True)
             try:
-                result = await self._encode_single_file(
-                    template, source_file,
-                    add_command_callback, update_status_callback
-                )
+                if template.metadata.enable_encode:
+                    result, payload = await self._encode_single_file(
+                        template,
+                        source_file,
+                        output_dir,
+                        analysis_dir,
+                        add_command_callback,
+                        update_status_callback,
+                    )
+                else:
+                    result, payload = await self._metrics_only(
+                        template,
+                        source_file,
+                        output_dir,
+                        analysis_dir,
+                        add_command_callback,
+                        update_status_callback,
+                    )
                 results.append(result)
+                if payload and report_payload is None:
+                    report_payload = payload
             except Exception as e:
                 logger.error(f"转码失败 {source_file}: {str(e)}")
                 failed.append({"file": str(source_file), "error": str(e)})
@@ -97,6 +121,18 @@ class TemplateEncoderService:
             ]
         )
 
+        report_data_file_rel = None
+        report_summary = None
+        if job and report_payload:
+            report_data, summary = report_payload
+            report_path = analysis_base_dir / "report_data.json"
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(report_path, "w", encoding="utf-8") as f:
+                json.dump(report_data, f, ensure_ascii=False, indent=2)
+            report_data_file_rel = str(report_path.relative_to(job.job_dir))
+            summary["report_data_file"] = report_data_file_rel
+            report_summary = summary
+
         return {
             "template_id": template.template_id,
             "template_name": template.name,
@@ -108,12 +144,19 @@ class TemplateEncoderService:
             "average_speed_fps": average_speed,
             "average_cpu_percent": average_cpu,
             "average_bitrate": average_bitrate,
+            "report_data_file": report_data_file_rel,
+            "report_summary": report_summary,
         }
 
     async def _encode_single_file(
-        self, template: EncodingTemplate, source_file: Path,
-        add_command_callback=None, update_status_callback=None
-    ) -> dict:
+        self,
+        template: EncodingTemplate,
+        source_file: Path,
+        output_dir: Path,
+        analysis_dir: Path,
+        add_command_callback=None,
+        update_status_callback=None,
+    ) -> tuple[dict, Optional[tuple[dict, dict]]]:
         """
         转码单个文件
 
@@ -127,25 +170,18 @@ class TemplateEncoderService:
             包含转码结果的字典
         """
         # 构建输出文件路径和扩展名
-        output_dir = Path(template.metadata.output_dir)
-
-        # 根据输出类型确定扩展名
-        if template.metadata.output_type == OutputType.SAME_AS_SOURCE:
-            # 同源视频类型
-            output_extension = source_file.suffix.lstrip('.')
+        encoder_type = template.metadata.encoder_type
+        if encoder_type == EncoderType.X264:
+            output_extension = "h264"
+        elif encoder_type == EncoderType.X265:
+            output_extension = "h265"
+        elif encoder_type == EncoderType.VVENC:
+            output_extension = "h266"
+        elif encoder_type == EncoderType.FFMPEG:
+            # FFmpeg 默认保持容器后缀，如果没有则回退为 h264 码流
+            output_extension = source_file.suffix.lstrip(".") or "h264"
         else:
-            # Raw Stream 类型，根据编码器类型确定扩展名
-            if template.metadata.encoder_type == EncoderType.X264:
-                output_extension = "h264"
-            elif template.metadata.encoder_type == EncoderType.X265:
-                output_extension = "h265"
-            elif template.metadata.encoder_type == EncoderType.VVENC:
-                output_extension = "h266"
-            elif template.metadata.encoder_type == EncoderType.FFMPEG:
-                # FFmpeg 默认使用 h264
-                output_extension = "h264"
-            else:
-                output_extension = "bin"
+            output_extension = source_file.suffix.lstrip(".") or "bin"
 
         output_file = output_dir / f"{source_file.stem}_encode.{output_extension}"
 
@@ -237,20 +273,112 @@ class TemplateEncoderService:
             "output_info": output_info,
         }
 
+        report_payload: Optional[tuple[dict, dict]] = None
+
         # 如果不跳过质量指标计算
         if not template.metadata.skip_metrics:
-            metrics = await self._calculate_metrics(
-                template, source_file, output_file,
-                add_command_callback, update_status_callback
+            raw_w = template.metadata.width if template.metadata.sequence_type == SequenceType.YUV420P else None
+            raw_h = template.metadata.height if template.metadata.sequence_type == SequenceType.YUV420P else None
+            raw_fps = template.metadata.fps if template.metadata.sequence_type == SequenceType.YUV420P else None
+
+            report_data, summary = await build_bitstream_report(
+                reference_path=source_file,
+                encoded_paths=[output_file],
+                analysis_dir=analysis_dir,
+                raw_width=raw_w,
+                raw_height=raw_h,
+                raw_fps=raw_fps,
+                raw_pix_fmt="yuv420p",
+                add_command_callback=add_command_callback,
+                update_status_callback=update_status_callback,
             )
-            result["metrics"] = metrics
+
+            metrics_summary = (summary.get("encoded") or [{}])[0]
+            result["metrics"] = {
+                "psnr": metrics_summary.get("psnr"),
+                "ssim": metrics_summary.get("ssim"),
+                "vmaf": metrics_summary.get("vmaf"),
+            }
+            result["bitrate"] = metrics_summary.get("avg_bitrate_bps")
+            report_payload = (report_data, summary)
 
         try:
             result["output_size_bytes"] = output_file.stat().st_size
         except OSError:
             result["output_size_bytes"] = None
 
-        return result
+        return result, report_payload
+
+    async def _metrics_only(
+        self,
+        template: EncodingTemplate,
+        source_file: Path,
+        output_dir: Path,
+        analysis_dir: Path,
+        add_command_callback=None,
+        update_status_callback=None,
+    ) -> tuple[dict, Optional[tuple[dict, dict]]]:
+        """
+        仅计算指标（跳过编码），使用输出目录中已存在的码流
+        """
+        from .ffmpeg import ffmpeg_service
+
+        encoded_file = self._find_encoded_output(output_dir, source_file)
+
+        start_time = time.perf_counter()
+        output_info = None
+        average_fps = None
+        try:
+            output_info = await ffmpeg_service.get_video_info(encoded_file)
+        except Exception as exc:
+            logger.warning(f"读取输出视频信息失败: {exc}")
+
+        result = {
+            "source_file": str(source_file),
+            "output_file": str(encoded_file),
+            "encoder_type": None,
+            "elapsed_seconds": 0.0,
+            "cpu_time_seconds": None,
+            "cpu_percent": None,
+            "average_fps": average_fps,
+            "output_info": output_info,
+        }
+
+        report_payload: Optional[tuple[dict, dict]] = None
+
+        if not template.metadata.skip_metrics:
+            raw_w = template.metadata.width if template.metadata.sequence_type == SequenceType.YUV420P else None
+            raw_h = template.metadata.height if template.metadata.sequence_type == SequenceType.YUV420P else None
+            raw_fps = template.metadata.fps if template.metadata.sequence_type == SequenceType.YUV420P else None
+
+            report_data, summary = await build_bitstream_report(
+                reference_path=source_file,
+                encoded_paths=[encoded_file],
+                analysis_dir=analysis_dir,
+                raw_width=raw_w,
+                raw_height=raw_h,
+                raw_fps=raw_fps,
+                raw_pix_fmt="yuv420p",
+                add_command_callback=add_command_callback,
+                update_status_callback=update_status_callback,
+            )
+
+            metrics_summary = (summary.get("encoded") or [{}])[0]
+            result["metrics"] = {
+                "psnr": metrics_summary.get("psnr"),
+                "ssim": metrics_summary.get("ssim"),
+                "vmaf": metrics_summary.get("vmaf"),
+            }
+            result["bitrate"] = metrics_summary.get("avg_bitrate_bps")
+            report_payload = (report_data, summary)
+
+        try:
+            result["output_size_bytes"] = encoded_file.stat().st_size
+        except OSError:
+            result["output_size_bytes"] = None
+        result["elapsed_seconds"] = time.perf_counter() - start_time
+
+        return result, report_payload
 
     def _build_encoder_command(
         self, template: EncodingTemplate, source_file: Path, output_file: Path
@@ -267,6 +395,8 @@ class TemplateEncoderService:
             编码器命令列表
         """
         encoder_type = template.metadata.encoder_type
+        if encoder_type is None:
+            raise ValueError("编码器类型未配置")
         encoder_path = template.metadata.encoder_path or self.encoder_paths.get(encoder_type)
 
         if not encoder_path:
@@ -334,8 +464,13 @@ class TemplateEncoderService:
         return cmd
 
     async def _calculate_metrics(
-        self, template: EncodingTemplate, reference: Path, distorted: Path,
-        add_command_callback=None, update_status_callback=None
+        self,
+        template: EncodingTemplate,
+        reference: Path,
+        distorted: Path,
+        metrics_dir: Optional[Path],
+        add_command_callback=None,
+        update_status_callback=None,
     ) -> dict:
         """
         计算质量指标
@@ -353,7 +488,9 @@ class TemplateEncoderService:
         from .ffmpeg import ffmpeg_service
 
         metrics = {}
-        metrics_dir = Path(template.metadata.metrics_report_dir)
+        if metrics_dir is None:
+            raise ValueError("未提供指标输出目录")
+        metrics_dir.mkdir(parents=True, exist_ok=True)
 
         # 准备YUV参数（如果是YUV格式）
         yuv_params = {}
@@ -446,6 +583,30 @@ class TemplateEncoderService:
             metrics["error"] = str(e)
 
         return metrics
+
+    def _find_encoded_output(self, output_dir: Path, reference: Path) -> Path:
+        """
+        在输出目录中查找与参考文件对应的已编码文件
+        """
+        # 优先尝试同名文件
+        exact = output_dir / reference.name
+        if exact.is_file():
+            return exact
+
+        # 其次尝试带 _encode 后缀的同扩展名文件
+        encode_same_ext = output_dir / f"{reference.stem}_encode{reference.suffix}"
+        if encode_same_ext.is_file():
+            return encode_same_ext
+
+        candidates = []
+        for pattern in (f"{reference.stem}_encode.*", f"{reference.stem}.*"):
+            candidates.extend(sorted(output_dir.glob(pattern)))
+
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+
+        raise FileNotFoundError(f"未在输出目录找到已编码文件: {reference.name}")
 
     def _resolve_source_files(self, source_path: str) -> List[Path]:
         """
