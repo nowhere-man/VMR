@@ -330,9 +330,10 @@ async def build_bitstream_report(
             fps_val = info.get("fps")
             enc_fps = float(fps_val) if isinstance(fps_val, (int, float)) and fps_val > 0 else None
 
-        # 2.2 帧率一致性校验（可获取的情况下）
+        # 2.2 帧率一致性校验（可获取的情况下）——如不一致则沿用参考帧率继续处理
         if enc_fps is not None and abs(enc_fps - ref_fps) > 0.01:
-            raise ValueError(f"帧率不一致: Ref={ref_fps}, Encoded({enc_label})={enc_fps}")
+            logger.warning(f"帧率不一致: Ref={ref_fps}, Encoded({enc_label})={enc_fps}，继续按参考帧率处理")
+            enc_fps = ref_fps
 
         # 2.3 转换为 yuv420p（必要时缩放到 Ref 分辨率）
         enc_yuv = analysis_dir / f"encoded_{idx+1}_yuv420p.yuv"

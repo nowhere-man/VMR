@@ -47,6 +47,10 @@ htmlcov/
 
 # Jobs Data (task output files)
 jobs/
+.DS_Store
+
+# 持久化模板存储目录
+templates/
 
 # Logs
 *.log

@@ -178,16 +178,26 @@ class TemplateEncoderService:
         elif encoder_type == EncoderType.VVENC:
             output_extension = "h266"
         elif encoder_type == EncoderType.FFMPEG:
-            # FFmpeg 默认保持容器后缀，如果没有则回退为 h264 码流
-            output_extension = source_file.suffix.lstrip(".") or "h264"
+            # FFmpeg：优先根据参数中的编码器选择后缀
+            params = (template.metadata.encoder_params or "").lower()
+            if "libx265" in params or "hevc" in params or "-c:v h265" in params or "-c:v hevc" in params:
+                output_extension = "h265"
+            elif "libx264" in params or "h264" in params:
+                output_extension = "h264"
+            else:
+                # 如果源是容器则沿用容器，否则回退 h264
+                ext = source_file.suffix.lstrip(".")
+                output_extension = ext if ext not in {"h264", "h265", "265", "264"} else "h264"
         else:
             output_extension = source_file.suffix.lstrip(".") or "bin"
 
         output_file = output_dir / f"{source_file.stem}_encode.{output_extension}"
 
         # 获取编码器命令
+        yuv_params = self._get_yuv_params(template, source_file)
+
         encoder_cmd = self._build_encoder_command(
-            template, source_file, output_file
+            template, source_file, output_file, yuv_params
         )
 
         logger.info(f"转码: {source_file} -> {output_file}")
@@ -277,9 +287,11 @@ class TemplateEncoderService:
 
         # 如果不跳过质量指标计算
         if not template.metadata.skip_metrics:
-            raw_w = template.metadata.width if template.metadata.sequence_type == SequenceType.YUV420P else None
-            raw_h = template.metadata.height if template.metadata.sequence_type == SequenceType.YUV420P else None
-            raw_fps = template.metadata.fps if template.metadata.sequence_type == SequenceType.YUV420P else None
+            raw_w = raw_h = raw_fps = None
+            if template.metadata.sequence_type == SequenceType.YUV420P:
+                if not yuv_params:
+                    raise ValueError("缺少 YUV 参数")
+                raw_w, raw_h, raw_fps = yuv_params
 
             report_data, summary = await build_bitstream_report(
                 reference_path=source_file,
@@ -347,9 +359,12 @@ class TemplateEncoderService:
         report_payload: Optional[tuple[dict, dict]] = None
 
         if not template.metadata.skip_metrics:
-            raw_w = template.metadata.width if template.metadata.sequence_type == SequenceType.YUV420P else None
-            raw_h = template.metadata.height if template.metadata.sequence_type == SequenceType.YUV420P else None
-            raw_fps = template.metadata.fps if template.metadata.sequence_type == SequenceType.YUV420P else None
+            raw_w = raw_h = raw_fps = None
+            if template.metadata.sequence_type == SequenceType.YUV420P:
+                yuv_params = self._get_yuv_params(template, source_file)
+                if not yuv_params:
+                    raise ValueError("缺少 YUV 参数")
+                raw_w, raw_h, raw_fps = yuv_params
 
             report_data, summary = await build_bitstream_report(
                 reference_path=source_file,
@@ -381,7 +396,7 @@ class TemplateEncoderService:
         return result, report_payload
 
     def _build_encoder_command(
-        self, template: EncodingTemplate, source_file: Path, output_file: Path
+        self, template: EncodingTemplate, source_file: Path, output_file: Path, yuv_params: Optional[tuple[int, int, float]]
     ) -> List[str]:
         """
         构建编码器命令
@@ -408,18 +423,33 @@ class TemplateEncoderService:
 
             # 如果是 YUV 输入，需要指定像素格式、分辨率和帧率
             if template.metadata.sequence_type == SequenceType.YUV420P:
+                if not yuv_params:
+                    raise ValueError("缺少 YUV 参数")
+                yuv_w, yuv_h, yuv_fps = yuv_params
                 cmd.extend([
                     "-f", "rawvideo",
                     "-pix_fmt", "yuv420p",
-                    "-s", f"{template.metadata.width}x{template.metadata.height}",
-                    "-r", str(template.metadata.fps),
+                    "-s", f"{yuv_w}x{yuv_h}",
+                    "-r", str(yuv_fps),
                 ])
 
             cmd.extend(["-i", str(source_file)])
 
-            # 添加用户自定义参数
+            # 规范化用户参数（补全缺失的前缀短横线）
             if template.metadata.encoder_params:
-                cmd.extend(template.metadata.encoder_params.split())
+                tokens = template.metadata.encoder_params.split()
+                normalized = []
+                for t in tokens:
+                    if t in {"c:v", "codec", "vcodec"}:
+                        normalized.append(f"-{t}")
+                    elif t.startswith("c:v="):
+                        normalized.append(f"-{t}")
+                    else:
+                        normalized.append(t)
+                cmd.extend(normalized)
+            # 若未指定视频编码器，基于 encoder_params 推断，默认 libx264
+            if all(flag not in " ".join(cmd) for flag in ["-c:v", "-codec:v", "-vcodec"]):
+                cmd.extend(["-c:v", "libx264"])
 
             # 自动覆盖输出文件
             cmd.extend(["-y", str(output_file)])
@@ -431,8 +461,8 @@ class TemplateEncoderService:
             # 如果是 YUV 输入，需要指定输入格式
             if template.metadata.sequence_type == SequenceType.YUV420P:
                 cmd.extend([
-                    "--input-res", f"{template.metadata.width}x{template.metadata.height}",
-                    "--fps", str(template.metadata.fps),
+                    "--input-res", f"{yuv_params[0]}x{yuv_params[1]}",
+                    "--fps", str(yuv_params[2]),
                 ])
 
             # 添加用户参数
@@ -448,8 +478,8 @@ class TemplateEncoderService:
             # 如果是 YUV 输入，需要指定分辨率和帧率
             if template.metadata.sequence_type == SequenceType.YUV420P:
                 cmd.extend([
-                    "--size", f"{template.metadata.width}x{template.metadata.height}",
-                    "--framerate", str(template.metadata.fps),
+                    "--size", f"{yuv_params[0]}x{yuv_params[1]}",
+                    "--framerate", str(yuv_params[2]),
                 ])
 
             cmd.extend(["-o", str(output_file)])
@@ -607,6 +637,27 @@ class TemplateEncoderService:
                 return candidate
 
         raise FileNotFoundError(f"未在输出目录找到已编码文件: {reference.name}")
+
+    def _get_yuv_params(self, template: EncodingTemplate, source_file: Path) -> Optional[tuple[int, int, float]]:
+        """
+        获取 YUV 的宽、高、fps；若模板未指定则从文件名解析：videoname_wxh_fps.yuv
+        """
+        if template.metadata.sequence_type != SequenceType.YUV420P:
+            return None
+
+        if template.metadata.width and template.metadata.height and template.metadata.fps:
+            return template.metadata.width, template.metadata.height, float(template.metadata.fps)
+
+        import re
+
+        m = re.match(r".*_([0-9]+)x([0-9]+)_([0-9]+(?:\\.[0-9]+)?)\\.yuv$", source_file.name, re.IGNORECASE)
+        if not m:
+            raise ValueError(f"YUV 文件名不符合格式 videoname_wxh_fps.yuv: {source_file.name}")
+
+        width = int(m.group(1))
+        height = int(m.group(2))
+        fps = float(m.group(3))
+        return width, height, fps
 
     def _resolve_source_files(self, source_path: str) -> List[Path]:
         """

@@ -18,6 +18,8 @@ class Settings(BaseSettings):
 
     # 任务存储
     jobs_root_dir: Path = Path("./jobs")
+    # 模板存储（持久化模板）
+    templates_root_dir: Path = Path("./templates")
 
     # FFmpeg 配置
     ffmpeg_timeout: int = 600

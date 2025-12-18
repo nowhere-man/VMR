@@ -504,7 +504,12 @@ async def execute_template(
 
             # 保存执行结果
             job.metadata.execution_result = result
-            job.metadata.status = JobStatus.COMPLETED
+            if result.get("failed"):
+                job.metadata.status = JobStatus.FAILED
+                first_err = (result.get("errors") or [{}])[0].get("error")
+                job.metadata.error_message = first_err or "执行失败"
+            else:
+                job.metadata.status = JobStatus.COMPLETED
             job.metadata.completed_at = datetime.utcnow()
             job_storage.update_job(job)
 

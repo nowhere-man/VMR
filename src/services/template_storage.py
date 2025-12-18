@@ -22,9 +22,9 @@ class TemplateStorage:
         初始化模板存储服务
 
         Args:
-            root_dir: 模板根目录，默认使用 jobs_root_dir/templates
+            root_dir: 模板根目录，默认使用 templates_root_dir（不再放在 jobs 下）
         """
-        self.root_dir = root_dir or (settings.jobs_root_dir / "templates")
+        self.root_dir = root_dir or settings.templates_root_dir
         self.root_dir.mkdir(parents=True, exist_ok=True)
 
     def create_template(self, metadata: EncodingTemplateMetadata) -> EncodingTemplate:

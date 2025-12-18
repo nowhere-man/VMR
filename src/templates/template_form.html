@@ -59,46 +59,8 @@
                     </select>
                     <p class="mt-1 text-xs text-gray-500">
                         <strong>Media:</strong> 容器格式，宽、高、fps 可从文件中获取<br>
-                        <strong>YUV 420P:</strong> 原始格式，必须手动指定宽、高、fps
+                        <strong>YUV 420P:</strong> 原始格式，宽/高/fps 将从文件名解析（videoname_wxh_fps.yuv）
                     </p>
-                </div>
-
-                <!-- YUV Parameters (shown only for YUV 420P) -->
-                <div id="yuvParamsSection" class="space-y-4">
-                    <div class="bg-yellow-50 border border-yellow-200 rounded-md p-3">
-                        <p class="text-sm text-yellow-800">
-                            <strong>注意：</strong>YUV 420P 类型必须指定以下参数
-                        </p>
-                    </div>
-
-                    <div class="grid grid-cols-3 gap-4">
-                        <div>
-                            <label for="width" class="block text-sm font-medium text-gray-700 mb-1">
-                                宽度 <span class="text-red-500" id="width_required">*</span>
-                            </label>
-                            <input type="number" id="width" name="width" min="1" required
-                                class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                placeholder="1920">
-                        </div>
-
-                        <div>
-                            <label for="height" class="block text-sm font-medium text-gray-700 mb-1">
-                                高度 <span class="text-red-500" id="height_required">*</span>
-                            </label>
-                            <input type="number" id="height" name="height" min="1" required
-                                class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                placeholder="1080">
-                        </div>
-
-                        <div>
-                            <label for="fps" class="block text-sm font-medium text-gray-700 mb-1">
-                                帧率 <span class="text-red-500" id="fps_required">*</span>
-                            </label>
-                            <input type="number" id="fps" name="fps" min="0.01" step="0.01" required
-                                class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                placeholder="30">
-                        </div>
-                    </div>
                 </div>
 
                 <!-- Source Path Type -->
@@ -288,19 +250,7 @@ const encodeConfigBlock = document.getElementById('encodeConfig');
 // Update UI based on sequence type
 function updateSequenceTypeUI() {
     const sequenceType = document.getElementById('sequence_type').value;
-    const yuvParamsSection = document.getElementById('yuvParamsSection');
-
-    if (sequenceType === 'yuv420p') {
-        yuvParamsSection.classList.remove('hidden');
-        document.getElementById('width').required = true;
-        document.getElementById('height').required = true;
-        document.getElementById('fps').required = true;
-    } else {
-        yuvParamsSection.classList.add('hidden');
-        document.getElementById('width').required = false;
-        document.getElementById('height').required = false;
-        document.getElementById('fps').required = false;
-    }
+    // YUV 不再需要手动填写宽高帧率
 }
 
 // 控制编码配置显示/必填
@@ -373,9 +323,6 @@ function populateForm(template) {
     document.getElementById('name').value = template.name || '';
     document.getElementById('description').value = template.description || '';
     document.getElementById('sequence_type').value = template.sequence_type || 'media';
-    document.getElementById('width').value = template.width || '';
-    document.getElementById('height').value = template.height || '';
-    document.getElementById('fps').value = template.fps || '';
     document.getElementById('source_path_type').value = template.source_path_type || 'directory';
     document.getElementById('source_path').value = template.source_path || '';
     document.getElementById('enable_encode').checked = template.enable_encode !== false;
@@ -419,12 +366,7 @@ document.getElementById('templateForm').addEventListener('submit', async (e) => 
         skip_metrics: skipMetrics
     };
 
-    // Add YUV parameters if needed
-    if (sequenceType === 'yuv420p') {
-        formData.width = parseInt(document.getElementById('width').value);
-        formData.height = parseInt(document.getElementById('height').value);
-        formData.fps = parseFloat(document.getElementById('fps').value);
-    }
+    // YUV 不再需要手动填写宽高帧率（从文件名推断），此处不传
 
     // Add encoder path if provided
     const encoderPath = document.getElementById('encoder_path').value.trim();

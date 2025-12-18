@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, Response
 
 from src.models import JobMetadata, JobMode, JobStatus
 from src.schemas import CreateJobResponse, ErrorResponse, JobDetailResponse, JobListItem
@@ -407,3 +407,25 @@ async def compare_jobs(job_ids: List[str]) -> dict:
         "jobs": jobs_data,
         "total_jobs": len(jobs_data)
     }
+
+
+@router.delete(
+    "/{job_id}",
+    status_code=204,
+    responses={404: {"model": ErrorResponse}},
+)
+async def delete_job(job_id: str) -> Response:
+    """
+    删除任务及其相关文件（目录下的所有资源）
+
+    - **job_id**: 任务 ID
+    """
+    job = job_storage.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    success = job_storage.delete_job(job_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to delete job resources")
+
+    return Response(status_code=204)

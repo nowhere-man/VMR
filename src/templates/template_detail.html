@@ -109,18 +109,24 @@
 
                 {% if template.sequence_type == 'yuv420p' %}
                 <div class="grid grid-cols-3 gap-4">
-                    <div>
-                        <dt class="text-sm font-medium text-gray-500">宽度</dt>
-                        <dd class="mt-1 text-sm text-gray-900">{{ template.width }} px</dd>
-                    </div>
-                    <div>
-                        <dt class="text-sm font-medium text-gray-500">高度</dt>
-                        <dd class="mt-1 text-sm text-gray-900">{{ template.height }} px</dd>
-                    </div>
-                    <div>
-                        <dt class="text-sm font-medium text-gray-500">帧率</dt>
-                        <dd class="mt-1 text-sm text-gray-900">{{ template.fps }} fps</dd>
-                    </div>
+                    {% if template.width and template.height and template.fps %}
+                        <div>
+                            <dt class="text-sm font-medium text-gray-500">宽度</dt>
+                            <dd class="mt-1 text-sm text-gray-900">{{ template.width }} px</dd>
+                        </div>
+                        <div>
+                            <dt class="text-sm font-medium text-gray-500">高度</dt>
+                            <dd class="mt-1 text-sm text-gray-900">{{ template.height }} px</dd>
+                        </div>
+                        <div>
+                            <dt class="text-sm font-medium text-gray-500">帧率</dt>
+                            <dd class="mt-1 text-sm text-gray-900">{{ template.fps }} fps</dd>
+                        </div>
+                    {% else %}
+                        <div class="col-span-3 text-sm text-gray-700 bg-yellow-50 border border-yellow-200 rounded p-2">
+                            YUV 参数将从文件名解析（videoname_wxh_fps.yuv）
+                        </div>
+                    {% endif %}
                 </div>
                 {% endif %}
 
@@ -244,33 +250,6 @@
     </div>
 </div>
 
-<!-- Execute Modal -->
-<div id="executeModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-    <div class="relative top-20 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
-        <div class="mt-3">
-            <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">执行模板转码</h3>
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                        源文件（可选，不填则使用模板配置）
-                    </label>
-                    <textarea id="sourceFiles" rows="4"
-                        class="w-full border border-gray-300 rounded-md px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="每行一个文件路径，例如:&#10;/path/to/video1.mp4&#10;/path/to/video2.mp4"></textarea>
-                </div>
-                <div class="flex justify-end space-x-3">
-                    <button id="cancelExecute" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">
-                        取消
-                    </button>
-                    <button id="confirmExecute" class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">
-                        开始执行
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
 <!-- Delete Confirmation Modal -->
 <div id="deleteModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
     <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
@@ -362,39 +341,34 @@ function showValidationResults(result) {
     container.classList.remove('hidden');
 }
 
-// Execute template
-document.getElementById('executeBtn').addEventListener('click', () => {
-    document.getElementById('executeModal').classList.remove('hidden');
-});
-
-document.getElementById('cancelExecute').addEventListener('click', () => {
-    document.getElementById('executeModal').classList.add('hidden');
-});
-
-document.getElementById('confirmExecute').addEventListener('click', async () => {
-    const sourceFilesText = document.getElementById('sourceFiles').value.trim();
-    const sourceFiles = sourceFilesText ? sourceFilesText.split('\n').filter(f => f.trim()) : null;
-
-    document.getElementById('executeModal').classList.add('hidden');
+// Execute template：直接发起任务并跳转任务列表
+document.getElementById('executeBtn').addEventListener('click', async () => {
     document.getElementById('loadingOverlay').classList.remove('hidden');
-
     try {
         const response = await fetch(`/api/templates/${templateId}/execute`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source_files: sourceFiles })
+            body: JSON.stringify({ source_files: null })
         });
 
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || 'Execution failed');
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || '执行转码失败');
         }
 
         const result = await response.json();
-        alert(`转码完成！\n成功: ${result.successful}\n失败: ${result.failed}`);
+        const message = `任务已创建，任务ID：${result.job_id}。请前往任务管理查看进度。`;
+        console.log(message);
+        // 在页面轻量提示
+        const info = document.createElement('div');
+        info.className = 'mb-3 rounded bg-blue-50 border border-blue-200 px-4 py-2 text-sm text-blue-800';
+        info.textContent = message;
+        document.querySelector('.space-y-6')?.prepend(info);
+        // 跳转到任务列表
+        window.location.href = '/jobs';
     } catch (error) {
         console.error('Error executing template:', error);
-        alert('执行转码失败: ' + error.message);
+        alert(error.message || '执行转码失败');
     } finally {
         document.getElementById('loadingOverlay').classList.add('hidden');
     }
@@ -425,13 +399,6 @@ document.getElementById('confirmDelete').addEventListener('click', async () => {
         console.error('Error deleting template:', error);
         alert('删除模板失败: ' + error.message);
         document.getElementById('loadingOverlay').classList.add('hidden');
-    }
-});
-
-// Close modals on outside click
-document.getElementById('executeModal').addEventListener('click', (e) => {
-    if (e.target.id === 'executeModal') {
-        document.getElementById('executeModal').classList.add('hidden');
     }
 });
 

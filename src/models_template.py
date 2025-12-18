@@ -102,15 +102,6 @@ class EncodingTemplateMetadata(BaseModel):
 
     def model_post_init(self, __context) -> None:
         """模型初始化后验证"""
-        # YUV类型必须提供宽、高、fps
-        if self.sequence_type == SequenceType.YUV420P:
-            if not self.width:
-                raise ValueError("YUV 420P类型必须指定视频宽度（width）")
-            if not self.height:
-                raise ValueError("YUV 420P类型必须指定视频高度（height）")
-            if not self.fps:
-                raise ValueError("YUV 420P类型必须指定帧率（fps）")
-
         # 如果不跳过质量指标，必须指定至少一个指标类型
         if not self.skip_metrics and not self.metrics_types:
             raise ValueError("启用质量指标计算时必须至少选择一个指标类型（PSNR/SSIM/VMAF）")

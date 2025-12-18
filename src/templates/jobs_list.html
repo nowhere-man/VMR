@@ -84,9 +84,15 @@
                         {% endif %}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
-                        <a href="/jobs/{{ job.job_id }}" class="text-blue-600 hover:text-blue-800 font-medium">
-                            查看详情
-                        </a>
+                        <div class="flex items-center gap-3">
+                            <a href="/jobs/{{ job.job_id }}" class="text-blue-600 hover:text-blue-800 font-medium">
+                                查看详情
+                            </a>
+                            <button type="button" onclick="deleteJob('{{ job.job_id }}')"
+                                class="text-red-600 hover:text-red-800 font-medium">
+                                删除
+                            </button>
+                        </div>
                     </td>
                 </tr>
                 {% endfor %}
@@ -110,4 +116,23 @@
         </a>
     </div>
 </div>
+
+<script>
+async function deleteJob(jobId) {
+    if (!confirm(`确认删除任务 ${jobId} 吗？此操作会清理任务文件。`)) {
+        return;
+    }
+    try {
+        const resp = await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' });
+        if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            throw new Error(data.detail || '删除失败');
+        }
+        alert('删除成功');
+        window.location.reload();
+    } catch (err) {
+        alert(err.message || '删除失败');
+    }
+}
+</script>
 {% endblock %}
