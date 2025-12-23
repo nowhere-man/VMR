@@ -4,8 +4,10 @@ FFmpeg 服务
 提供视频处理和质量指标计算功能
 """
 import asyncio
+import csv
 import json
 import subprocess
+from io import StringIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -424,7 +426,7 @@ class FFmpegService:
             vmaf_filter = f"libvmaf=model_path={model_path}:log_path={output_json}:log_fmt=json"
         else:
             # 使用FFmpeg内置模型
-            vmaf_filter = f"libvmaf=log_path={output_json}:log_fmt=json"
+            vmaf_filter = f"libvmaf=log_path={output_json}:log_fmt=csv"
 
         cmd.extend([
             "-lavfi",
@@ -580,21 +582,57 @@ class FFmpegService:
             raise RuntimeError(f"Failed to parse SSIM log: {str(e)}")
 
     async def _parse_vmaf_json(self, json_path: Path) -> Dict[str, float]:
-        """解析 VMAF JSON 文件"""
-        try:
-            with open(json_path, "r") as f:
-                data = json.load(f)
+        """解析 VMAF 日志文件（支持 json 或 csv 日志格式）"""
 
-            # VMAF JSON 结构: {"pooled_metrics": {"vmaf": {"mean": 95.5, "harmonic_mean": 94.2}}}
-            pooled = data.get("pooled_metrics", {}).get("vmaf", {})
+        def _safe_float(val: Any) -> Optional[float]:
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                return None
+
+        def _mean(values: List[float]) -> float:
+            return sum(values) / len(values) if values else 0.0
+
+        def _harmonic_mean(values: List[float]) -> float:
+            positives = [v for v in values if v and v > 0]
+            return len(positives) / sum(1.0 / v for v in positives) if positives else 0.0
+
+        def _parse_csv(text: str) -> Dict[str, float]:
+            reader = csv.DictReader(StringIO(text))
+            vmaf_vals: List[float] = []
+            vmaf_neg_vals: List[float] = []
+            for row in reader:
+                vmaf_val = _safe_float(row.get("vmaf"))
+                if vmaf_val is not None:
+                    vmaf_vals.append(vmaf_val)
+                vmaf_neg_val = _safe_float(row.get("vmaf_neg"))
+                if vmaf_neg_val is not None:
+                    vmaf_neg_vals.append(vmaf_neg_val)
 
             return {
-                "vmaf_mean": float(pooled.get("mean", 0.0)),
-                "vmaf_harmonic_mean": float(pooled.get("harmonic_mean", 0.0)),
+                "vmaf_mean": _mean(vmaf_vals),
+                "vmaf_harmonic_mean": _harmonic_mean(vmaf_vals),
+                "vmaf_neg_mean": _mean(vmaf_neg_vals),
             }
 
+        try:
+            text = json_path.read_text()
+            stripped = text.lstrip()
+            if stripped.startswith("{"):
+                data = json.loads(text)
+                pooled = data.get("pooled_metrics", {}).get("vmaf", {}) or {}
+                vmaf_neg_pooled = data.get("pooled_metrics", {}).get("vmaf_neg", {}) or {}
+                return {
+                    "vmaf_mean": float(pooled.get("mean", 0.0)),
+                    "vmaf_harmonic_mean": float(pooled.get("harmonic_mean", 0.0)),
+                    "vmaf_neg_mean": float(vmaf_neg_pooled.get("mean", 0.0)),
+                }
+
+            # CSV 日志
+            return _parse_csv(text)
+
         except Exception as e:
-            raise RuntimeError(f"Failed to parse VMAF JSON: {str(e)}")
+            raise RuntimeError(f"Failed to parse VMAF log: {str(e)}")
 
 
 # Helper function for subprocess with timeout

@@ -148,35 +148,66 @@ def _parse_ssim_stats(log_path: Path) -> Dict[str, Any]:
     }
 
 
-def _parse_vmaf_json(json_path: Path) -> Dict[str, Any]:
+def _parse_vmaf_csv(json_path: Path) -> Dict[str, Any]:
     with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     frames = data.get("frames", []) or []
-    vmaf_frames: List[float] = []
-    vmaf_neg_frames: List[float] = []
+
+    def _to_float(val: Any) -> Optional[float]:
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            return None
+
+    # 收集帧级所有可用指标（包含 vmaf/vmaf_neg 及子特征，如 vif、adm、motion 等）
+    metric_keys = set()
     for frame in frames:
         metrics = frame.get("metrics", {}) or {}
-        if "vmaf" in metrics:
-            vmaf_frames.append(float(metrics["vmaf"]))
-        if "vmaf_neg" in metrics:
-            vmaf_neg_frames.append(float(metrics["vmaf_neg"]))
+        metric_keys.update(metrics.keys())
+
+    metric_keys_sorted = sorted(metric_keys)
+    frame_series: Dict[str, List[Optional[float]]] = {k: [] for k in metric_keys_sorted}
+
+    for frame in frames:
+        metrics = frame.get("metrics", {}) or {}
+        for key in metric_keys_sorted:
+            frame_series[key].append(_to_float(metrics.get(key)))
+
+    # 移除全为空的指标，避免带来无意义的曲线
+    frame_series = {k: v for k, v in frame_series.items() if any(val is not None for val in v)}
 
     pooled = data.get("pooled_metrics", {}) or {}
     vmaf_pooled = pooled.get("vmaf", {}) or {}
     vmaf_neg_pooled = pooled.get("vmaf_neg", {}) or {}
 
+    feature_summary: Dict[str, Dict[str, float]] = {}
+    for key, stats in pooled.items():
+        if not isinstance(stats, dict):
+            continue
+        entry: Dict[str, float] = {}
+        mean_val = _to_float(stats.get("mean"))
+        harmonic_val = _to_float(stats.get("harmonic_mean"))
+        if mean_val is not None:
+            entry["mean"] = mean_val
+        if harmonic_val is not None:
+            entry["harmonic_mean"] = harmonic_val
+        if entry:
+            feature_summary[key] = entry
+
     result: Dict[str, Any] = {
         "summary": {
-            "vmaf_mean": float(vmaf_pooled.get("mean", 0.0)) if vmaf_pooled else None,
-            "vmaf_harmonic_mean": float(vmaf_pooled.get("harmonic_mean", 0.0)) if vmaf_pooled else None,
-            "vmaf_neg_mean": float(vmaf_neg_pooled.get("mean", 0.0)) if vmaf_neg_pooled else None,
+            "vmaf_mean": _to_float(vmaf_pooled.get("mean")) if vmaf_pooled else None,
+            "vmaf_harmonic_mean": _to_float(vmaf_pooled.get("harmonic_mean")) if vmaf_pooled else None,
+            "vmaf_neg_mean": _to_float(vmaf_neg_pooled.get("mean")) if vmaf_neg_pooled else None,
         },
         "frames": {
-            "vmaf": vmaf_frames,
-            "vmaf_neg": vmaf_neg_frames,
+            **frame_series,
         },
     }
+
+    if feature_summary:
+        result["feature_summary"] = feature_summary
 
     return result
 
@@ -371,8 +402,9 @@ async def build_bitstream_report(
         # 2.4 计算 PSNR / SSIM / VMAF(vmaf + vmaf_neg)
         psnr_log = analysis_dir / f"encoded_{idx+1}_psnr.log"
         ssim_log = analysis_dir / f"encoded_{idx+1}_ssim.log"
-        vmaf_json = analysis_dir / f"encoded_{idx+1}_vmaf.json"
+        vmaf_csv = analysis_dir / f"encoded_{idx+1}_vmaf.csv"
 
+        # 注意：ffmpeg 滤镜的第一个输入为待测(distorted)，第二个为参考(reference)
         raw_ref_args = [
             ffmpeg_service.ffmpeg_path,
             "-y",
@@ -385,7 +417,7 @@ async def build_bitstream_report(
             "-r",
             str(ref_fps),
             "-i",
-            str(ref_yuv),
+            str(enc_yuv),  # distorted
             "-f",
             "rawvideo",
             "-pix_fmt",
@@ -395,7 +427,7 @@ async def build_bitstream_report(
             "-r",
             str(ref_fps),
             "-i",
-            str(enc_yuv),
+            str(ref_yuv),  # reference
         ]
 
         limit_args = ["-frames:v", str(frames_used)] if frame_mismatch else []
@@ -433,7 +465,7 @@ async def build_bitstream_report(
             "version=vmaf_v0.6.1\\:name=vmaf|version=vmaf_v0.6.1neg\\:name=vmaf_neg"
         )
         vmaf_filter = (
-            f"libvmaf='model={model_value}':n_threads=8:log_fmt=json:log_path={vmaf_json}"
+            f"libvmaf='model={model_value}':n_threads=8:log_fmt=csv:log_path={vmaf_csv}"
         )
         await _run_logged(
             raw_ref_args
@@ -452,15 +484,15 @@ async def build_bitstream_report(
 
         psnr_data = _parse_psnr_stats(psnr_log)
         ssim_data = _parse_ssim_stats(ssim_log)
-        vmaf_data = _parse_vmaf_json(vmaf_json)
+        vmaf_data = _parse_vmaf_csv(vmaf_csv)
         # 清理中间文件
         try:
-            if psnr_log.exists():
-                psnr_log.unlink()
-            if ssim_log.exists():
-                ssim_log.unlink()
-            if vmaf_json.exists():
-                vmaf_json.unlink()
+            # if psnr_log.exists():
+            #     psnr_log.unlink()
+            # if ssim_log.exists():
+            #     ssim_log.unlink()
+            # if vmaf_csv.exists():
+            #     vmaf_csv.unlink()
             # 清理转换后的 yuv（仅当非原始输入或缩放过时）
             if enc_yuv.exists() and enc_yuv != enc_input:
                 enc_yuv.unlink()

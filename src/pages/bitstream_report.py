@@ -85,10 +85,9 @@ def _plot_frame_lines(
         values = y_series_getter(item)
         avg_val = None
         if values:
-            try:
-                avg_val = sum(values) / len(values)
-            except Exception:
-                avg_val = None
+            numeric_vals = [v for v in values if isinstance(v, (int, float))]
+            if numeric_vals:
+                avg_val = sum(numeric_vals) / len(numeric_vals)
         legend_name = f"{label}: {avg_val:.4f}" if avg_val is not None else label
         fig.add_trace(go.Scatter(x=list(range(len(values))), y=values, mode="lines", name=legend_name))
     fig.update_layout(
@@ -246,7 +245,9 @@ if len(df_metrics) >= 2:
 
 st.subheader("逐帧折线图")
 
-tab_psnr, tab_ssim, tab_vmaf, tab_vmaf_neg = st.tabs(["PSNR", "SSIM", "VMAF", "VMAF-NEG"])
+tab_psnr, tab_ssim, tab_vmaf, tab_vmaf_neg = st.tabs(
+    ["PSNR", "SSIM", "VMAF", "VMAF-NEG"]
+)
 
 with tab_psnr:
     comp = st.selectbox("分量", ["avg", "y", "u", "v"], key="psnr_comp")
@@ -270,18 +271,58 @@ with tab_ssim:
         "SSIM",
     )
 
+def _get_vmaf_frames(item: Dict[str, Any]) -> Dict[str, List[Any]]:
+    return (((item.get("metrics") or {}).get("vmaf") or {}).get("frames") or {})
+
 with tab_vmaf:
-    _plot_frame_lines(
-        encoded_items,
-        lambda item: (((item.get("metrics") or {}).get("vmaf") or {}).get("frames") or {}).get("vmaf", []),
-        "VMAF - 每帧",
-        "VMAF",
-    )
+    available_vmaf_metrics = set()
+    for item in encoded_items:
+        frames_dict = _get_vmaf_frames(item)
+        for key, vals in frames_dict.items():
+            if key == "vmaf_neg":
+                continue
+            if isinstance(vals, list) and any(v is not None for v in vals):
+                available_vmaf_metrics.add(key)
+
+    if not available_vmaf_metrics:
+        st.info("该报告未包含 VMAF 帧级数据。")
+    else:
+        preferred_order = [
+            "vmaf",
+            "adm2",
+            "motion2",
+            "vif_scale0",
+            "vif_scale1",
+            "vif_scale2",
+            "vif_scale3",
+        ]
+        ordered_metrics: List[str] = []
+        for key in preferred_order:
+            if key in available_vmaf_metrics:
+                ordered_metrics.append(key)
+                available_vmaf_metrics.discard(key)
+        ordered_metrics.extend(sorted(available_vmaf_metrics))
+
+        default_metric = "vmaf" if "vmaf" in ordered_metrics else ordered_metrics[0]
+        default_index = ordered_metrics.index(default_metric)
+        selected_metric = st.selectbox(
+            "选择要绘制的 VMAF / 子特征指标（单选）",
+            ordered_metrics,
+            index=default_index,
+            key="vmaf_metric",
+        )
+        display_name = selected_metric.upper()
+        _plot_frame_lines(
+            encoded_items,
+            lambda item, metric_key=selected_metric: _get_vmaf_frames(item).get(metric_key, []),
+            f"{display_name} - 每帧",
+            display_name,
+        )
 
 with tab_vmaf_neg:
     _plot_frame_lines(
         encoded_items,
-        lambda item: (((item.get("metrics") or {}).get("vmaf") or {}).get("frames") or {}).get("vmaf_neg", []),
+        lambda item: _get_vmaf_frames(item).get("vmaf_neg", []),
         "VMAF-NEG - 每帧",
         "VMAF-NEG",
     )
