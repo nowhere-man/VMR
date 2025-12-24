@@ -130,7 +130,7 @@ st.caption(
 
 
 # ========== Metrics ==========
-st.header("1) Metrics")
+st.header("Metrics")
 
 rows = []
 for entry in entries:
@@ -208,7 +208,7 @@ if not merged.empty:
 
 
 # ========== BD-Rate ==========
-st.header("2) BD-Rate")
+st.header("BD-Rate")
 if bd_list:
     df_bd = pd.DataFrame(bd_list)
     st.dataframe(
@@ -254,7 +254,7 @@ else:
 
 
 # ========== BD-Metrics ==========
-st.header("3) BD-Metrics")
+st.header("BD-Metrics")
 if bd_list:
     df_bdm = pd.DataFrame(bd_list)
     st.dataframe(
@@ -300,7 +300,7 @@ else:
 
 
 # ========== Bitrate 分析 ==========
-st.header("4) 码率分析")
+st.header("码率分析")
 if not merged.empty:
     st.dataframe(
         merged[
@@ -333,11 +333,11 @@ else:
 
 
 # ========== Performance（占位） ==========
-st.header("5) Performance")
+st.header("Performance")
 st.info("TODO: 后续加入 CPU 占用、FPS 以及编码时间统计对比。")
 
 # ========== 环境信息 ==========
-st.header("6) 环境信息")
+st.header("环境信息")
 env = report.get("environment") or {}
 if env:
     env_rows = [{"项": k, "值": v} for k, v in env.items()]

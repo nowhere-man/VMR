@@ -6,7 +6,7 @@
 <div class="max-w-5xl mx-auto space-y-6">
   <div class="bg-white rounded-lg shadow-sm p-6">
     <h1 class="text-2xl font-bold text-gray-900">{{ '编辑模板' if template_id else '创建模板' }}</h1>
-    <p class="mt-1 text-sm text-gray-600">配置 Baseline / Experimental，支持跳过转码或自动编码。</p>
+    <p class="mt-1 text-sm text-gray-600">配置 Baseline / Experimental。</p>
   </div>
 
   <form id="templateForm" class="bg-white rounded-lg shadow-sm p-6 space-y-6">
@@ -19,14 +19,14 @@
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">描述</label>
-        <textarea id="description" name="description" rows="2" maxlength="500" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500"></textarea>
+        <input id="description" name="description" maxlength="500" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500" />
       </div>
     </div>
 
     <!-- Baseline -->
     <div class="space-y-4 border-t pt-6">
       <div class="flex items-center justify-between">
-        <h2 class="text-lg font-semibold text-gray-900">Baseline</h2>
+        <h2 class="text-lg font-semibold text-gray-900">Baseline 对照组</h2>
         <label class="flex items-center text-sm text-gray-700 space-x-2">
           <input type="checkbox" id="baseline_skip" class="h-4 w-4 text-blue-600 border-gray-300 rounded" />
           <span>跳过视频编码</span>
@@ -36,40 +36,41 @@
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">源视频目录<span class="text-red-500">*</span></label>
           <input id="baseline_source_dir" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500" required />
-          <p class="text-xs text-gray-500 mt-1">仅扫描一级目录；YUV 文件名需满足 stream_wxh_fps.yuv。</p>
+          <p class="text-xs text-gray-500 mt-1">YUV文件名格式需满足：stream_wxh_fps.yuv。</p>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">码流目录<span class="text-red-500">*</span></label>
           <input id="baseline_bitstream_dir" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500" required />
         </div>
       </div>
-      <div id="baseline_encode_block" class="grid md:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">编码器类型<span class="text-red-500">*</span></label>
-          <select id="baseline_encoder_type" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500">
-            <option value="">请选择</option>
-            <option value="ffmpeg">FFmpeg</option>
-            <option value="x264">x264</option>
-            <option value="x265">x265</option>
-            <option value="vvenc">VVenC</option>
-          </select>
+      <div id="baseline_encode_block" class="space-y-4">
+        <div class="grid md:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">编码器类型<span class="text-red-500">*</span></label>
+            <select id="baseline_encoder_type" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500">
+              <option value="">请选择</option>
+              <option value="ffmpeg" selected>FFmpeg</option>
+              <option value="x264">x264</option>
+              <option value="x265">x265</option>
+              <option value="vvenc">VVenC</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">RC<span class="text-red-500">*</span></label>
+            <select id="baseline_rate_control" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500">
+              <option value="">请选择</option>
+              <option value="crf" selected>CRF</option>
+              <option value="abr">ABR</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">码率点位（逗号分隔，最少4个点位）<span class="text-red-500">*</span></label>
+            <input id="baseline_bitrate_points" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500" placeholder="如：21,24,27,29" />
+          </div>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">编码参数<span class="text-red-500">*</span></label>
           <input id="baseline_encoder_params" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500" />
-          <p class="text-xs text-gray-500 mt-1">crf/bitrate 将按点位追加并覆盖同类参数。</p>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">码控方式<span class="text-red-500">*</span></label>
-          <select id="baseline_rate_control" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500">
-            <option value="">请选择</option>
-            <option value="crf">CRF</option>
-            <option value="abr">ABR</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">码率点位（逗号分隔，支持浮点）<span class="text-red-500">*</span></label>
-          <input id="baseline_bitrate_points" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500" placeholder="如：21,22,23 或 1500,2000" />
         </div>
       </div>
     </div>
@@ -77,7 +78,7 @@
     <!-- Experimental -->
     <div class="space-y-4 border-t pt-6">
       <div class="flex items-center justify-between">
-        <h2 class="text-lg font-semibold text-gray-900">Experimental</h2>
+        <h2 class="text-lg font-semibold text-gray-900">Experimental 实验组</h2>
         <label class="flex items-center text-sm text-gray-700 space-x-2">
           <input type="checkbox" id="exp_skip" class="h-4 w-4 text-blue-600 border-gray-300 rounded" />
           <span>跳过视频编码</span>
@@ -87,39 +88,41 @@
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">源视频目录<span class="text-red-500">*</span></label>
           <input id="exp_source_dir" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500" required />
+          <p class="text-xs text-gray-500 mt-1">YUV文件名格式需满足：stream_wxh_fps.yuv。</p>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">码流目录<span class="text-red-500">*</span></label>
           <input id="exp_bitstream_dir" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500" required />
         </div>
       </div>
-      <div id="exp_encode_block" class="grid md:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">编码器类型<span class="text-red-500">*</span></label>
-          <select id="exp_encoder_type" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500">
-            <option value="">请选择</option>
-            <option value="ffmpeg">FFmpeg</option>
-            <option value="x264">x264</option>
-            <option value="x265">x265</option>
-            <option value="vvenc">VVenC</option>
-          </select>
+      <div id="exp_encode_block" class="space-y-4">
+        <div class="grid md:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">编码器类型<span class="text-red-500">*</span></label>
+            <select id="exp_encoder_type" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500">
+              <option value="">请选择</option>
+              <option value="ffmpeg" selected>FFmpeg</option>
+              <option value="x264">x264</option>
+              <option value="x265">x265</option>
+              <option value="vvenc">VVenC</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">RC<span class="text-red-500">*</span></label>
+            <select id="exp_rate_control" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500">
+              <option value="">请选择</option>
+              <option value="crf" selected>CRF</option>
+              <option value="abr">ABR</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">码率点位（逗号分隔，最少4个点位）<span class="text-red-500">*</span></label>
+            <input id="exp_bitrate_points" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500" placeholder="如：21,24,27,29" />
+          </div>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">编码参数<span class="text-red-500">*</span></label>
           <input id="exp_encoder_params" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500" />
-          <p class="text-xs text-gray-500 mt-1">crf/bitrate 将按点位追加并覆盖同类参数。</p>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">码控方式<span class="text-red-500">*</span></label>
-          <select id="exp_rate_control" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500">
-            <option value="">请选择</option>
-            <option value="crf">CRF</option>
-            <option value="abr">ABR</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">码率点位（逗号分隔，支持浮点）<span class="text-red-500">*</span></label>
-          <input id="exp_bitrate_points" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500" placeholder="如：21,22,23 或 1500,2000" />
         </div>
       </div>
     </div>
