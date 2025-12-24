@@ -261,6 +261,10 @@ class FFmpegService:
         ref_height: int = None,
         ref_fps: float = None,
         ref_pix_fmt: str = "yuv420p",
+        add_command_callback=None,
+        update_status_callback=None,
+        command_type: str = "psnr",
+        source_file: Optional[str] = None,
     ) -> Dict[str, float]:
         """
         计算 PSNR 指标
@@ -303,6 +307,12 @@ class FFmpegService:
             "-",
         ])
 
+        cmd_id = None
+        if add_command_callback:
+            cmd_id = add_command_callback(command_type, " ".join(cmd), source_file or str(distorted_path))
+        if update_status_callback and cmd_id:
+            update_status_callback(cmd_id, "running")
+
         try:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -313,15 +323,24 @@ class FFmpegService:
             stdout, stderr = await _wait_for_process(process, settings.ffmpeg_timeout)
 
             if process.returncode != 0:
+                if update_status_callback and cmd_id:
+                    update_status_callback(cmd_id, "failed", stderr.decode())
                 raise RuntimeError(f"PSNR calculation failed: {stderr.decode()}")
 
             # 解析 PSNR 日志
-            return await self._parse_psnr_log(output_log)
+            result = await self._parse_psnr_log(output_log)
+            if update_status_callback and cmd_id:
+                update_status_callback(cmd_id, "completed")
+            return result
 
         except asyncio.TimeoutError:
             process.kill()
+            if update_status_callback and cmd_id:
+                update_status_callback(cmd_id, "failed", "PSNR calculation timed out")
             raise RuntimeError("PSNR calculation timed out")
         except Exception as e:
+            if update_status_callback and cmd_id:
+                update_status_callback(cmd_id, "failed", str(e))
             raise RuntimeError(f"Failed to calculate PSNR: {str(e)}")
 
     async def calculate_ssim(
@@ -333,6 +352,10 @@ class FFmpegService:
         ref_height: int = None,
         ref_fps: float = None,
         ref_pix_fmt: str = "yuv420p",
+        add_command_callback=None,
+        update_status_callback=None,
+        command_type: str = "ssim",
+        source_file: Optional[str] = None,
     ) -> Dict[str, float]:
         """
         计算 SSIM 指标
@@ -375,6 +398,12 @@ class FFmpegService:
             "-",
         ])
 
+        cmd_id = None
+        if add_command_callback:
+            cmd_id = add_command_callback(command_type, " ".join(cmd), source_file or str(distorted_path))
+        if update_status_callback and cmd_id:
+            update_status_callback(cmd_id, "running")
+
         try:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -385,15 +414,24 @@ class FFmpegService:
             stdout, stderr = await _wait_for_process(process, settings.ffmpeg_timeout)
 
             if process.returncode != 0:
+                if update_status_callback and cmd_id:
+                    update_status_callback(cmd_id, "failed", stderr.decode())
                 raise RuntimeError(f"SSIM calculation failed: {stderr.decode()}")
 
             # 解析 SSIM 日志
-            return await self._parse_ssim_log(output_log)
+            result = await self._parse_ssim_log(output_log)
+            if update_status_callback and cmd_id:
+                update_status_callback(cmd_id, "completed")
+            return result
 
         except asyncio.TimeoutError:
             process.kill()
+            if update_status_callback and cmd_id:
+                update_status_callback(cmd_id, "failed", "SSIM calculation timed out")
             raise RuntimeError("SSIM calculation timed out")
         except Exception as e:
+            if update_status_callback and cmd_id:
+                update_status_callback(cmd_id, "failed", str(e))
             raise RuntimeError(f"Failed to calculate SSIM: {str(e)}")
 
     async def calculate_vmaf(
@@ -406,6 +444,10 @@ class FFmpegService:
         ref_height: int = None,
         ref_fps: float = None,
         ref_pix_fmt: str = "yuv420p",
+        add_command_callback=None,
+        update_status_callback=None,
+        command_type: str = "vmaf",
+        source_file: Optional[str] = None,
     ) -> Dict[str, float]:
         """
         计算 VMAF 指标
@@ -458,6 +500,12 @@ class FFmpegService:
             "-",
         ])
 
+        cmd_id = None
+        if add_command_callback:
+            cmd_id = add_command_callback(command_type, " ".join(cmd), source_file or str(distorted_path))
+        if update_status_callback and cmd_id:
+            update_status_callback(cmd_id, "running")
+
         try:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -468,15 +516,24 @@ class FFmpegService:
             stdout, stderr = await _wait_for_process(process, settings.ffmpeg_timeout)
 
             if process.returncode != 0:
+                if update_status_callback and cmd_id:
+                    update_status_callback(cmd_id, "failed", stderr.decode())
                 raise RuntimeError(f"VMAF calculation failed: {stderr.decode()}")
 
             # 解析 VMAF JSON
-            return await self._parse_vmaf_json(output_json)
+            result = await self._parse_vmaf_json(output_json)
+            if update_status_callback and cmd_id:
+                update_status_callback(cmd_id, "completed")
+            return result
 
         except asyncio.TimeoutError:
             process.kill()
+            if update_status_callback and cmd_id:
+                update_status_callback(cmd_id, "failed", "VMAF calculation timed out")
             raise RuntimeError("VMAF calculation timed out")
         except Exception as e:
+            if update_status_callback and cmd_id:
+                update_status_callback(cmd_id, "failed", str(e))
             raise RuntimeError(f"Failed to calculate VMAF: {str(e)}")
 
     async def encode_video(
@@ -485,6 +542,10 @@ class FFmpegService:
         output_path: Path,
         preset: str = "medium",
         crf: int = 23,
+        add_command_callback=None,
+        update_status_callback=None,
+        command_type: str = "encode",
+        source_file: Optional[str] = None,
     ) -> None:
         """
         使用固定预设编码视频（单文件模式）
@@ -510,6 +571,12 @@ class FFmpegService:
             str(output_path),
         ]
 
+        cmd_id = None
+        if add_command_callback:
+            cmd_id = add_command_callback(command_type, " ".join(cmd), source_file or str(input_path))
+        if update_status_callback and cmd_id:
+            update_status_callback(cmd_id, "running")
+
         try:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -520,12 +587,21 @@ class FFmpegService:
             stdout, stderr = await _wait_for_process(process, settings.ffmpeg_timeout)
 
             if process.returncode != 0:
+                if update_status_callback and cmd_id:
+                    update_status_callback(cmd_id, "failed", stderr.decode())
                 raise RuntimeError(f"Encoding failed: {stderr.decode()}")
+
+            if update_status_callback and cmd_id:
+                update_status_callback(cmd_id, "completed")
 
         except asyncio.TimeoutError:
             process.kill()
+            if update_status_callback and cmd_id:
+                update_status_callback(cmd_id, "failed", "Encoding timed out")
             raise RuntimeError("Encoding timed out")
         except Exception as e:
+            if update_status_callback and cmd_id:
+                update_status_callback(cmd_id, "failed", str(e))
             raise RuntimeError(f"Failed to encode video: {str(e)}")
 
     async def _parse_psnr_log(self, log_path: Path) -> Dict[str, float]:

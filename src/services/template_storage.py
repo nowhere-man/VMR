@@ -93,7 +93,6 @@ class TemplateStorage:
 
     def list_templates(
         self,
-        encoder_type: Optional[str] = None,
         limit: Optional[int] = None,
     ) -> List[EncodingTemplate]:
         """
@@ -123,10 +122,6 @@ class TemplateStorage:
                 with open(metadata_path, "r", encoding="utf-8") as f:
                     metadata_dict = json.load(f)
                     metadata = EncodingTemplateMetadata(**metadata_dict)
-
-                    # 编码器类型过滤
-                    if encoder_type and metadata.encoder_type != encoder_type:
-                        continue
 
                     templates.append(
                         EncodingTemplate(metadata=metadata, template_dir=template_dir)

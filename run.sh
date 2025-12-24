@@ -21,13 +21,6 @@ mkdir -p jobs
 
 export PYTHONPATH=.
 
-
-
-echo "Starting Streamlit reports app..."
-echo "   Reports: http://localhost:8079"
-echo ""
-
-# Start Streamlit in background
 .venv/bin/streamlit run src/reports_app.py \
     --server.port 8079 \
     --server.address 0.0.0.0 \
@@ -47,11 +40,9 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 0' SIGINT SIGTERM
 
-echo "Starting FastAPI server..."
+echo "Starting server..."
 echo "   Web UI: http://localhost:8080"
 echo ""
-
-# Start FastAPI server (foreground)
 .venv/bin/uvicorn src.main:app --reload --host 0.0.0.0 --port 8080
 
 echo "Press Ctrl+C to stop servers"

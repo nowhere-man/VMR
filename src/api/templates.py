@@ -3,9 +3,7 @@ API 端点实现 - 转码模板管理
 
 提供模板创建、查询、更新、删除等 RESTful API
 """
-import math
-from typing import Any, Dict, List, Optional
-
+from typing import List, Optional
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
@@ -15,19 +13,14 @@ from src.models_template import EncodingTemplateMetadata
 from src.schemas_template import (
     CreateTemplateRequest,
     CreateTemplateResponse,
-    TemplateComparisonMetrics,
-    TemplateComparisonRequest,
-    TemplateComparisonResponse,
-    TemplateComparisonStat,
-    TemplateExecutionSummary,
     TemplateListItem,
     TemplateResponse,
     UpdateTemplateRequest,
     ValidateTemplateResponse,
 )
 from src.models import JobMetadata, JobMode, JobStatus
+from src.services.template_runner import template_runner
 from src.services.storage import job_storage
-from src.services.template_encoder import template_encoder_service
 from src.services.template_storage import template_storage
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
@@ -39,121 +32,21 @@ class ExecuteTemplateRequest(BaseModel):
     source_files: Optional[List[str]] = Field(
         None, description="可选的源文件列表，不提供则使用模板配置"
     )
+    recompute_baseline: bool = Field(default=True, description="是否重新计算 Baseline")
 
 
-def _mean(values: List[Optional[float]]) -> Optional[float]:
-    valid = [v for v in values if isinstance(v, (int, float))]
-    if not valid:
-        return None
-    return sum(valid) / len(valid)
-
-
-def _build_stat(a: Optional[float], b: Optional[float]) -> TemplateComparisonStat:
-    if a is None and b is None:
-        return TemplateComparisonStat(template_a=None, template_b=None, delta=None, delta_percent=None)
-
-    delta = None
-    if a is not None and b is not None:
-        delta = b - a
-
-    delta_percent = None
-    if a not in (None, 0) and b is not None:
-        delta_percent = ((b - a) / a) * 100
-
-    return TemplateComparisonStat(
-        template_a=a,
-        template_b=b,
-        delta=delta,
-        delta_percent=delta_percent,
-    )
-
-
-def _collect_metric_points(results: List[Any]) -> Dict[str, List[tuple[float, float]]]:
-    points: Dict[str, List[tuple[float, float]]] = {
-        "psnr": [],
-        "ssim": [],
-        "vmaf": [],
+def _fingerprint(side) -> str:
+    import json
+    payload = {
+        "skip_encode": side.skip_encode,
+        "source_dir": side.source_dir,
+        "encoder_type": side.encoder_type,
+        "encoder_params": side.encoder_params,
+        "rate_control": side.rate_control,
+        "bitrate_points": side.bitrate_points,
+        "bitstream_dir": side.bitstream_dir,
     }
-
-    for item in results:
-        if hasattr(item, "metrics"):
-            metrics = getattr(item, "metrics") or {}
-        else:
-            metrics = (item.get("metrics") if isinstance(item, dict) else {}) or {}
-
-        if hasattr(item, "output_info"):
-            output_info = getattr(item, "output_info") or {}
-        else:
-            output_info = (item.get("output_info") if isinstance(item, dict) else {}) or {}
-
-        bitrate = output_info.get("bitrate")
-        if not isinstance(bitrate, (int, float)) or bitrate <= 0:
-            continue
-
-        psnr_avg = (metrics.get("psnr") or {}).get("psnr_avg")
-        if isinstance(psnr_avg, (int, float)):
-            points["psnr"].append((float(psnr_avg), float(bitrate)))
-
-        ssim_avg = (metrics.get("ssim") or {}).get("ssim_avg")
-        if isinstance(ssim_avg, (int, float)):
-            points["ssim"].append((float(ssim_avg), float(bitrate)))
-
-        vmaf_mean = (metrics.get("vmaf") or {}).get("vmaf_mean")
-        if isinstance(vmaf_mean, (int, float)):
-            points["vmaf"].append((float(vmaf_mean), float(bitrate)))
-
-    return points
-
-
-def _interpolate(points: List[tuple[float, float]], quality: float) -> Optional[float]:
-    for idx in range(len(points) - 1):
-        x0, y0 = points[idx]
-        x1, y1 = points[idx + 1]
-        if x0 <= quality <= x1 and x1 != x0:
-            t = (quality - x0) / (x1 - x0)
-            return math.log(y0) + t * (math.log(y1) - math.log(y0))
-    return None
-
-
-def _compute_bd_rate(
-    points_a: List[tuple[float, float]], points_b: List[tuple[float, float]]
-) -> Optional[float]:
-    if len(points_a) < 2 or len(points_b) < 2:
-        return None
-
-    points_a = sorted(points_a, key=lambda item: item[0])
-    points_b = sorted(points_b, key=lambda item: item[0])
-
-    q_min = max(points_a[0][0], points_b[0][0])
-    q_max = min(points_a[-1][0], points_b[-1][0])
-
-    if q_max <= q_min:
-        return None
-
-    samples = 20
-    step = (q_max - q_min) / samples
-    accum = 0.0
-    count = 0
-
-    for i in range(samples + 1):
-        q = q_min + step * i
-        log_rate_a = _interpolate(points_a, q)
-        log_rate_b = _interpolate(points_b, q)
-        if log_rate_a is None or log_rate_b is None:
-            continue
-
-        rate_a = math.exp(log_rate_a)
-        rate_b = math.exp(log_rate_b)
-        if rate_a <= 0:
-            continue
-
-        accum += (rate_b - rate_a) / rate_a
-        count += 1
-
-    if count == 0:
-        return None
-
-    return (accum / count) * 100
+    return json.dumps(payload, sort_keys=True)
 
 
 @router.post(
@@ -182,25 +75,10 @@ async def create_template(request: CreateTemplateRequest) -> CreateTemplateRespo
         template_id=template_id,
         name=request.name,
         description=request.description,
-        sequence_type=request.sequence_type,
-        width=request.width,
-        height=request.height,
-        fps=request.fps,
-        source_path_type=request.source_path_type,
-        source_path=request.source_path,
-        enable_encode=request.enable_encode,
-        encoder_type=request.encoder_type,
-        encoder_path=request.encoder_path,
-        encoder_params=request.encoder_params,
-        output_dir=request.output_dir,
-        skip_metrics=request.skip_metrics,
-        metrics_types=request.metrics_types,
+        baseline=request.baseline,  # Pydantic 会自动转换为 TemplateSideConfig
+        experimental=request.experimental,
     )
-
-    if not metadata.enable_encode:
-        metadata.encoder_type = None
-        metadata.encoder_params = None
-        metadata.encoder_path = None
+    metadata.baseline_fingerprint = _fingerprint(metadata.baseline)
 
     # 创建模板
     try:
@@ -210,8 +88,6 @@ async def create_template(request: CreateTemplateRequest) -> CreateTemplateRespo
 
     return CreateTemplateResponse(
         template_id=template.template_id,
-        name=template.name,
-        created_at=template.metadata.created_at,
     )
 
 
@@ -237,19 +113,10 @@ async def get_template(template_id: str) -> TemplateResponse:
         template_id=metadata.template_id,
         name=metadata.name,
         description=metadata.description,
-        sequence_type=metadata.sequence_type,
-        width=metadata.width,
-        height=metadata.height,
-        fps=metadata.fps,
-        source_path_type=metadata.source_path_type,
-        source_path=metadata.source_path,
-        enable_encode=metadata.enable_encode,
-        encoder_type=metadata.encoder_type,
-        encoder_path=metadata.encoder_path,
-        encoder_params=metadata.encoder_params,
-        output_dir=metadata.output_dir,
-        skip_metrics=metadata.skip_metrics,
-        metrics_types=metadata.metrics_types,
+        baseline=metadata.baseline,
+        experimental=metadata.experimental,
+        baseline_computed=metadata.baseline_computed,
+        baseline_fingerprint=metadata.baseline_fingerprint,
         created_at=metadata.created_at,
         updated_at=metadata.updated_at,
     )
@@ -261,7 +128,6 @@ async def get_template(template_id: str) -> TemplateResponse:
     summary="列出所有模板",
 )
 async def list_templates(
-    encoder_type: Optional[str] = None,
     limit: Optional[int] = None,
 ) -> List[TemplateListItem]:
     """
@@ -270,16 +136,19 @@ async def list_templates(
     - **encoder_type**: 可选的编码器类型过滤
     - **limit**: 可选的数量限制
     """
-    templates = template_storage.list_templates(encoder_type=encoder_type, limit=limit)
+    templates = template_storage.list_templates(limit=limit)
 
     return [
         TemplateListItem(
             template_id=t.metadata.template_id,
             name=t.metadata.name,
             description=t.metadata.description,
-            sequence_type=t.metadata.sequence_type,
-            encoder_type=t.metadata.encoder_type,
             created_at=t.metadata.created_at,
+            baseline_source_dir=t.metadata.baseline.source_dir,
+            baseline_bitstream_dir=t.metadata.baseline.bitstream_dir,
+            experimental_source_dir=t.metadata.experimental.source_dir,
+            experimental_bitstream_dir=t.metadata.experimental.bitstream_dir,
+            baseline_computed=t.metadata.baseline_computed,
         )
         for t in templates
     ]
@@ -304,46 +173,28 @@ async def update_template(
     if not template:
         raise HTTPException(status_code=404, detail=f"Template {template_id} not found")
 
-    fields_set = getattr(request, "model_fields_set", None)
-    if fields_set is None:
-        fields_set = getattr(request, "__fields_set__", set())
-
-    # 更新非空字段
+    baseline_changed = False
     if request.name is not None:
         template.metadata.name = request.name
     if request.description is not None:
         template.metadata.description = request.description
-    if request.sequence_type is not None:
-        template.metadata.sequence_type = request.sequence_type
-    if request.width is not None:
-        template.metadata.width = request.width
-    if request.height is not None:
-        template.metadata.height = request.height
-    if request.fps is not None:
-        template.metadata.fps = request.fps
-    if request.source_path_type is not None:
-        template.metadata.source_path_type = request.source_path_type
-    if request.source_path is not None:
-        template.metadata.source_path = request.source_path
-    if request.enable_encode is not None:
-        template.metadata.enable_encode = request.enable_encode
-    if request.encoder_type is not None:
-        template.metadata.encoder_type = request.encoder_type
-    if "encoder_path" in fields_set:
-        template.metadata.encoder_path = request.encoder_path
-    if request.encoder_params is not None:
-        template.metadata.encoder_params = request.encoder_params
-    if request.output_dir is not None:
-        template.metadata.output_dir = request.output_dir
-    if request.skip_metrics is not None:
-        template.metadata.skip_metrics = request.skip_metrics
-    if request.metrics_types is not None:
-        template.metadata.metrics_types = request.metrics_types
+    if request.baseline is not None:
+        template.metadata.baseline = request.baseline
+        baseline_changed = True
+    if request.experimental is not None:
+        template.metadata.experimental = request.experimental
 
-    if template.metadata.enable_encode is False:
-        template.metadata.encoder_type = None
-        template.metadata.encoder_params = None
-        template.metadata.encoder_path = None
+    if baseline_changed:
+        template.metadata.baseline_computed = False
+        template.metadata.baseline_fingerprint = _fingerprint(template.metadata.baseline)
+        try:
+            base_dir = Path(template.metadata.baseline.bitstream_dir)
+            if base_dir.is_dir():
+                for p in base_dir.iterdir():
+                    if p.is_file():
+                        p.unlink()
+        except Exception:
+            pass
 
     # 保存更新
     template_storage.update_template(template)
@@ -354,19 +205,10 @@ async def update_template(
         template_id=metadata.template_id,
         name=metadata.name,
         description=metadata.description,
-        sequence_type=metadata.sequence_type,
-        width=metadata.width,
-        height=metadata.height,
-        fps=metadata.fps,
-        source_path_type=metadata.source_path_type,
-        source_path=metadata.source_path,
-        enable_encode=metadata.enable_encode,
-        encoder_type=metadata.encoder_type,
-        encoder_path=metadata.encoder_path,
-        encoder_params=metadata.encoder_params,
-        output_dir=metadata.output_dir,
-        skip_metrics=metadata.skip_metrics,
-        metrics_types=metadata.metrics_types,
+        baseline=metadata.baseline,
+        experimental=metadata.experimental,
+        baseline_computed=metadata.baseline_computed,
+        baseline_fingerprint=metadata.baseline_fingerprint,
         created_at=metadata.created_at,
         updated_at=metadata.updated_at,
     )
@@ -405,18 +247,30 @@ async def validate_template(template_id: str) -> ValidateTemplateResponse:
     if not template:
         raise HTTPException(status_code=404, detail=f"Template {template_id} not found")
 
-    try:
-        validation_results = template.validate_paths()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"验证路径时出错: {str(e)}")
+    def _dir_exists(p: str) -> bool:
+        return Path(p).is_dir()
 
-    all_valid = all(validation_results.values())
+    def _writable(p: str) -> bool:
+        path = Path(p)
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            test = path / ".writetest"
+            test.write_text("ok")
+            test.unlink()
+            return True
+        except Exception:
+            return False
+
+    b = template.metadata.baseline
+    e = template.metadata.experimental
+    source_ok = _dir_exists(b.source_dir) and _dir_exists(e.source_dir)
+    output_ok = _writable(b.bitstream_dir) and _writable(e.bitstream_dir)
 
     return ValidateTemplateResponse(
         template_id=template_id,
-        source_exists=validation_results["source_exists"],
-        output_dir_writable=validation_results["output_dir_writable"],
-        all_valid=all_valid,
+        source_exists=source_ok,
+        output_dir_writable=output_ok,
+        all_valid=source_ok and output_ok,
     )
 
 
@@ -488,12 +342,13 @@ async def execute_template(
             job.metadata.status = JobStatus.PROCESSING
             job_storage.update_job(job)
 
-            result = await template_encoder_service.encode_with_template(
-                template, None,
-                add_command_callback=add_command_log,
-                update_status_callback=update_command_status,
+            result = await template_runner.execute(
+                template,
+                recompute_baseline=request.recompute_baseline,
                 job=job,
             )
+            # 保存 baseline 状态更新
+            template_storage.update_template(template)
 
             # 保存执行结果
             job.metadata.execution_result = result
@@ -525,156 +380,5 @@ async def execute_template(
     response_model=dict,
     summary="创建模板对比任务",
 )
-async def compare_templates(
-    request: TemplateComparisonRequest,
-    background_tasks: BackgroundTasks,
-) -> dict:
-    if request.template_a == request.template_b:
-        raise HTTPException(status_code=400, detail="请选择不同的模板进行对比")
-
-    template_a = template_storage.get_template(request.template_a)
-    if not template_a:
-        raise HTTPException(status_code=404, detail=f"Template {request.template_a} not found")
-
-    template_b = template_storage.get_template(request.template_b)
-    if not template_b:
-        raise HTTPException(status_code=404, detail=f"Template {request.template_b} not found")
-
-    meta_a = template_a.metadata
-    meta_b = template_b.metadata
-
-    # 验证编码器类型一致（仅当两个模板都需要编码时）
-    if meta_a.enable_encode and meta_b.enable_encode and meta_a.encoder_type != meta_b.encoder_type:
-        raise HTTPException(status_code=400, detail="两个模板的编码器类型必须一致")
-
-    # 验证质量指标设置一致
-    if meta_a.skip_metrics != meta_b.skip_metrics:
-        raise HTTPException(status_code=400, detail="两个模板的质量指标设置必须一致")
-
-    if not meta_a.skip_metrics and sorted(meta_a.metrics_types) != sorted(meta_b.metrics_types):
-        raise HTTPException(status_code=400, detail="两个模板的指标类型需保持一致")
-
-    sources_a = template_encoder_service.resolve_source_files(template_a)
-    sources_b = template_encoder_service.resolve_source_files(template_b)
-
-    if not sources_a:
-        raise HTTPException(status_code=400, detail="模板 A 未找到任何源文件")
-
-    normalized_a = [str(path.resolve()) for path in sources_a]
-    normalized_b = [str(path.resolve()) for path in sources_b]
-
-    if sorted(normalized_a) != sorted(normalized_b):
-        raise HTTPException(status_code=400, detail="两个模板的源文件集合不一致")
-
-    # Create comparison job
-    job_id = job_storage.generate_job_id()
-    metadata = JobMetadata(
-        job_id=job_id,
-        mode=JobMode.COMPARISON,
-        status=JobStatus.PENDING,
-        template_a_id=request.template_a,
-        template_b_id=request.template_b,
-    )
-
-    job = job_storage.create_job(metadata)
-
-    # Schedule comparison execution in background
-    async def execute_comparison():
-        try:
-            job.metadata.status = JobStatus.PROCESSING
-            job_storage.update_job(job)
-
-            source_paths = [Path(p) for p in normalized_a]
-
-            result_a_raw = await template_encoder_service.encode_with_template(
-                template_a, source_paths
-            )
-            result_b_raw = await template_encoder_service.encode_with_template(
-                template_b, source_paths
-            )
-
-            if result_a_raw.get("failed") or result_a_raw.get("errors"):
-                raise Exception("模板 A 执行失败")
-
-            if result_b_raw.get("failed") or result_b_raw.get("errors"):
-                raise Exception("模板 B 执行失败")
-
-            summary_a = TemplateExecutionSummary(**result_a_raw)
-            summary_b = TemplateExecutionSummary(**result_b_raw)
-
-            speed_stat = _build_stat(
-                summary_a.average_speed_fps,
-                summary_b.average_speed_fps,
-            )
-            cpu_stat = _build_stat(
-                summary_a.average_cpu_percent,
-                summary_b.average_cpu_percent,
-            )
-            bitrate_stat = _build_stat(
-                summary_a.average_bitrate,
-                summary_b.average_bitrate,
-            )
-
-            def metric_avg(summary: TemplateExecutionSummary, metric_key: str, field: str) -> Optional[float]:
-                values: List[float] = []
-                for item in summary.results:
-                    metric_block = (item.metrics or {}).get(metric_key) or {}
-                    value = metric_block.get(field)
-                    if isinstance(value, (int, float)):
-                        values.append(float(value))
-                return _mean(values)
-
-            quality_metrics = {
-                "psnr": _build_stat(
-                    metric_avg(summary_a, "psnr", "psnr_avg"),
-                    metric_avg(summary_b, "psnr", "psnr_avg"),
-                ),
-                "ssim": _build_stat(
-                    metric_avg(summary_a, "ssim", "ssim_avg"),
-                    metric_avg(summary_b, "ssim", "ssim_avg"),
-                ),
-                "vmaf": _build_stat(
-                    metric_avg(summary_a, "vmaf", "vmaf_mean"),
-                    metric_avg(summary_b, "vmaf", "vmaf_mean"),
-                ),
-            }
-
-            points_a = _collect_metric_points(summary_a.results)
-            points_b = _collect_metric_points(summary_b.results)
-
-            bd_rate = {
-                metric: _compute_bd_rate(points_a[metric], points_b[metric])
-                for metric in ("psnr", "ssim", "vmaf")
-            }
-
-            comparisons = TemplateComparisonMetrics(
-                speed_fps=speed_stat,
-                cpu_percent=cpu_stat,
-                bitrate=bitrate_stat,
-                quality_metrics=quality_metrics,
-                bd_rate=bd_rate,
-            )
-
-            comparison_result = TemplateComparisonResponse(
-                template_a=summary_a,
-                template_b=summary_b,
-                comparisons=comparisons,
-            )
-
-            # Store comparison result
-            job.metadata.comparison_result = comparison_result.model_dump()
-            job.metadata.status = JobStatus.COMPLETED
-            job_storage.update_job(job)
-
-        except Exception as e:
-            job.metadata.status = JobStatus.FAILED
-            job.metadata.error_message = str(e)
-            job_storage.update_job(job)
-
-    background_tasks.add_task(execute_comparison)
-
-    return {
-        "job_id": job_id,
-        "status": job.metadata.status.value,
-        "message": "对比任务已创建，正在后台执行"
-    }
+async def compare_templates() -> dict:
+    raise HTTPException(status_code=404, detail="Template compare is removed")

@@ -52,6 +52,32 @@ def _list_bitstream_jobs(limit: int = 20) -> List[Dict]:
     return items[:limit]
 
 
+def _list_template_jobs(limit: int = 20) -> List[Dict]:
+    """列出最近的模板指标报告 job_id 列表。"""
+    root = settings.jobs_root_dir
+    if not root.is_absolute():
+        root = (project_root / root).resolve()
+    if not root.exists():
+        return []
+
+    items: List[Dict] = []
+    for job_dir in root.iterdir():
+        if not job_dir.is_dir():
+            continue
+        report_path = job_dir / "metrics_analysis" / "report_data.json"
+        if report_path.exists():
+            mtime = report_path.stat().st_mtime
+            items.append(
+                {
+                    "job_id": job_dir.name,
+                    "mtime": mtime,
+                    "report_path": report_path,
+                }
+            )
+    items.sort(key=lambda x: x["mtime"], reverse=True)
+    return items[:limit]
+
+
 def _set_job_query_param(job_id: str) -> None:
     """使用新的 st.query_params API 设置 job_id，避免 old experimental API 冲突。"""
     try:
@@ -61,8 +87,23 @@ def _set_job_query_param(job_id: str) -> None:
         pass
 
 
-# 支持从 FastAPI 任务详情页直接跳转到码流分析报告：http://localhost:8079?job_id=<job_id>
+# 支持从 FastAPI 任务详情页直接跳转：
+# - 码流分析：http://localhost:8079?job_id=<job_id>
+# - 模板指标：http://localhost:8079?template_job_id=<job_id>
 job_id = st.query_params.get("job_id")
+template_job_id = st.query_params.get("template_job_id")
+
+if template_job_id:
+    if isinstance(template_job_id, list):
+        template_job_id = template_job_id[0] if template_job_id else None
+    if template_job_id:
+        st.session_state["template_job_id"] = str(template_job_id)
+        try:
+            st.query_params["template_job_id"] = str(template_job_id)
+        except Exception:
+            pass
+        st.switch_page("pages/template_metrics.py")
+
 if job_id:
     if isinstance(job_id, list):
         job_id = job_id[0] if job_id else None
@@ -120,5 +161,25 @@ else:
                 st.session_state["bitstream_job_id"] = job_id
                 _set_job_query_param(job_id)
                 st.switch_page("pages/bitstream_report.py")
+
+# 模板指标报告列表
+st.subheader("最近的模板指标报告")
+tpl_jobs = _list_template_jobs()
+if not tpl_jobs:
+    st.info("暂无模板指标报告。请在 Metrics 分析中创建任务。")
+else:
+    for item in tpl_jobs:
+        job_id = item["job_id"]
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.write(f"- Job: `{job_id}`  (report at: `metrics_analysis/report_data.json`)")
+        with col2:
+            if st.button("打开报告", key=f"open_tpl_{job_id}"):
+                st.session_state["template_job_id"] = job_id
+                try:
+                    st.query_params["template_job_id"] = job_id
+                except Exception:
+                    pass
+                st.switch_page("pages/template_metrics.py")
 
 # 侧边栏（不再保留 legacy 报告扫描）

@@ -6,13 +6,52 @@
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+from nanoid import generate
 
 from src.models import Job, JobMode, JobStatus, MetricsResult
 
 logger = logging.getLogger(__name__)
+
+
+def _now_tz():
+    return datetime.now().astimezone()
+
+
+def _make_command_callbacks(job, job_storage):
+    from src.models import CommandLog, CommandStatus
+
+    def add_command_log(command_type: str, command: str, source_file: str = None) -> str:
+        command_id = generate(size=8)
+        log = CommandLog(
+            command_id=command_id,
+            command_type=command_type,
+            command=command,
+            status=CommandStatus.PENDING,
+            source_file=source_file,
+        )
+        job.metadata.command_logs.append(log)
+        job_storage.update_job(job)
+        return command_id
+
+    def update_command_status(command_id: str, status: str, error: str = None):
+        for cmd_log in job.metadata.command_logs:
+            if cmd_log.command_id == command_id:
+                cmd_log.status = CommandStatus(status)
+                now = _now_tz()
+                if status == "running":
+                    cmd_log.started_at = now
+                elif status in ("completed", "failed"):
+                    cmd_log.completed_at = now
+                if error:
+                    cmd_log.error_message = error
+                break
+        job_storage.update_job(job)
+
+    return add_command_log, update_command_status
 
 
 class TaskProcessor:
@@ -48,7 +87,7 @@ class TaskProcessor:
         try:
             # 更新状态为处理中
             job.metadata.status = JobStatus.PROCESSING
-            job.metadata.updated_at = datetime.utcnow()
+            job.metadata.updated_at = _now_tz()
             job_storage.update_job(job)
 
             logger.info(f"Processing job {job_id} (mode: {job.metadata.mode})")
@@ -63,8 +102,8 @@ class TaskProcessor:
 
             # 更新状态为已完成
             job.metadata.status = JobStatus.COMPLETED
-            job.metadata.completed_at = datetime.utcnow()
-            job.metadata.updated_at = datetime.utcnow()
+            job.metadata.completed_at = _now_tz()
+            job.metadata.updated_at = _now_tz()
             job_storage.update_job(job)
 
             logger.info(f"Job {job_id} completed successfully")
@@ -73,7 +112,7 @@ class TaskProcessor:
             # 更新状态为失败
             job.metadata.status = JobStatus.FAILED
             job.metadata.error_message = str(e)
-            job.metadata.updated_at = datetime.utcnow()
+            job.metadata.updated_at = _now_tz()
             job_storage.update_job(job)
 
             logger.error(f"Job {job_id} failed: {str(e)}")
@@ -87,6 +126,8 @@ class TaskProcessor:
         """
         from .ffmpeg import ffmpeg_service
         from .storage import job_storage
+
+        add_cmd, update_cmd = _make_command_callbacks(job, job_storage)
 
         # 获取原始视频路径
         reference_path = job.get_reference_path()
@@ -105,6 +146,10 @@ class TaskProcessor:
             output_path=distorted_path,
             preset=preset,
             crf=23,
+            add_command_callback=add_cmd,
+            update_status_callback=update_cmd,
+            command_type="encode",
+            source_file=str(reference_path),
         )
 
         # 更新待测视频信息
@@ -118,7 +163,7 @@ class TaskProcessor:
         )
 
         # 计算质量指标
-        await self._calculate_metrics(job, reference_path, distorted_path)
+        await self._calculate_metrics(job, reference_path, distorted_path, add_cmd, update_cmd)
 
     async def _process_dual_file(self, job: Job) -> None:
         """
@@ -127,6 +172,8 @@ class TaskProcessor:
         Args:
             job: 任务对象
         """
+        from .storage import job_storage
+        add_cmd, update_cmd = _make_command_callbacks(job, job_storage)
         # 获取参考视频和待测视频路径
         reference_path = job.get_reference_path()
         distorted_path = job.get_distorted_path()
@@ -152,7 +199,7 @@ class TaskProcessor:
             )
 
         # 计算质量指标
-        await self._calculate_metrics(job, reference_path, distorted_path)
+        await self._calculate_metrics(job, reference_path, distorted_path, add_cmd, update_cmd)
 
     async def _process_bitstream_analysis(self, job: Job) -> None:
         """
@@ -160,36 +207,8 @@ class TaskProcessor:
         """
         from .storage import job_storage
         from .bitstream_analysis import analyze_bitstream_job
-        from src.models import CommandLog, CommandStatus
-        from nanoid import generate
 
-        # 命令状态更新回调
-        def update_command_status(command_id: str, status: str, error: str = None):
-            for cmd_log in job.metadata.command_logs:
-                if cmd_log.command_id == command_id:
-                    cmd_log.status = CommandStatus(status)
-                    if status == "running":
-                        cmd_log.started_at = datetime.utcnow()
-                    elif status in ("completed", "failed"):
-                        cmd_log.completed_at = datetime.utcnow()
-                    if error:
-                        cmd_log.error_message = error
-                    break
-            job_storage.update_job(job)
-
-        # 添加命令日志
-        def add_command_log(command_type: str, command: str, source_file: str = None) -> str:
-            command_id = generate(size=8)
-            cmd_log = CommandLog(
-                command_id=command_id,
-                command_type=command_type,
-                command=command,
-                status=CommandStatus.PENDING,
-                source_file=source_file,
-            )
-            job.metadata.command_logs.append(cmd_log)
-            job_storage.update_job(job)
-            return command_id
+        add_command_log, update_command_status = _make_command_callbacks(job, job_storage)
 
         report_data, summary = await analyze_bitstream_job(
             job,
@@ -211,7 +230,12 @@ class TaskProcessor:
         job_storage.update_job(job)
 
     async def _calculate_metrics(
-        self, job: Job, reference_path: Path, distorted_path: Path
+        self,
+        job: Job,
+        reference_path: Path,
+        distorted_path: Path,
+        add_command_callback=None,
+        update_status_callback=None,
     ) -> None:
         """
         计算质量指标
@@ -236,13 +260,31 @@ class TaskProcessor:
             logger.info(f"Calculating metrics for job {job.job_id}")
 
             psnr_task = ffmpeg_service.calculate_psnr(
-                reference_path, distorted_path, psnr_log
+                reference_path,
+                distorted_path,
+                psnr_log,
+                add_command_callback=add_command_callback,
+                update_status_callback=update_status_callback,
+                command_type="psnr",
+                source_file=str(distorted_path),
             )
             ssim_task = ffmpeg_service.calculate_ssim(
-                reference_path, distorted_path, ssim_log
+                reference_path,
+                distorted_path,
+                ssim_log,
+                add_command_callback=add_command_callback,
+                update_status_callback=update_status_callback,
+                command_type="ssim",
+                source_file=str(distorted_path),
             )
             vmaf_task = ffmpeg_service.calculate_vmaf(
-                reference_path, distorted_path, vmaf_json
+                reference_path,
+                distorted_path,
+                vmaf_json,
+                add_command_callback=add_command_callback,
+                update_status_callback=update_status_callback,
+                command_type="vmaf",
+                source_file=str(distorted_path),
             )
 
             # 等待所有指标计算完成

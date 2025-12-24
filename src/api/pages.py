@@ -3,6 +3,7 @@
 
 提供 Web 界面的 HTML 页面
 """
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -20,6 +21,17 @@ router = APIRouter(tags=["pages"])
 BASE_DIR = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = BASE_DIR / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+def _fmt_time(dt: Optional[datetime]) -> Optional[str]:
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    try:
+        return dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
 @router.get("/jobs/{job_id}", response_class=HTMLResponse)
@@ -47,13 +59,9 @@ async def job_report_page(request: Request, job_id: str) -> HTMLResponse:
             "job_id": metadata.job_id,
             "status": metadata.status.value,
             "mode": metadata.mode.value,
-            "created_at": metadata.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-            "updated_at": metadata.updated_at.strftime("%Y-%m-%d %H:%M:%S"),
-            "completed_at": (
-                metadata.completed_at.strftime("%Y-%m-%d %H:%M:%S")
-                if metadata.completed_at
-                else None
-            ),
+            "created_at": _fmt_time(metadata.created_at),
+            "updated_at": _fmt_time(metadata.updated_at),
+            "completed_at": _fmt_time(metadata.completed_at),
             "template_name": metadata.template_name,
             "reference_filename": (
                 metadata.reference_video.filename if metadata.reference_video else None
@@ -76,8 +84,8 @@ async def job_report_page(request: Request, job_id: str) -> HTMLResponse:
                     "command": cmd.command,
                     "status": cmd.status.value,
                     "source_file": cmd.source_file,
-                    "started_at": cmd.started_at.strftime("%Y-%m-%d %H:%M:%S") if cmd.started_at else None,
-                    "completed_at": cmd.completed_at.strftime("%Y-%m-%d %H:%M:%S") if cmd.completed_at else None,
+                    "started_at": cmd.started_at.isoformat() if cmd.started_at else None,
+                    "completed_at": cmd.completed_at.isoformat() if cmd.completed_at else None,
                     "error_message": cmd.error_message,
                 }
                 for cmd in metadata.command_logs
@@ -110,12 +118,8 @@ async def jobs_list_page(
             "job_id": job.metadata.job_id,
             "status": job.metadata.status.value,
             "template_name": job.metadata.template_name or "N/A",
-            "created_at": job.metadata.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-            "completed_at": (
-                job.metadata.completed_at.strftime("%Y-%m-%d %H:%M:%S")
-                if job.metadata.completed_at
-                else "-"
-            ),
+            "created_at": _fmt_time(job.metadata.created_at) or "-",
+            "completed_at": _fmt_time(job.metadata.completed_at) or "-",
             "error_message": job.metadata.error_message,
         }
         for job in jobs
@@ -145,18 +149,9 @@ async def create_template_page(request: Request) -> HTMLResponse:
     )
 
 
-@router.get("/templates/compare", response_class=HTMLResponse)
-async def compare_templates_page(request: Request) -> HTMLResponse:
-    """模板对比页面"""
-
-    return templates.TemplateResponse(
-        "template_compare.html", {"request": request}
-    )
-
-
 @router.get("/templates/{template_id}", response_class=HTMLResponse)
 async def template_detail_page(request: Request, template_id: str) -> HTMLResponse:
-    """模板详情页面"""
+    """模板详情页面（简化：复用表单编辑页）"""
     template = template_storage.get_template(template_id)
 
     if not template:
@@ -169,33 +164,9 @@ async def template_detail_page(request: Request, template_id: str) -> HTMLRespon
             status_code=404,
         )
 
-    metadata = template.metadata
-
-    context = {
-        "request": request,
-        "template": {
-            "template_id": metadata.template_id,
-            "name": metadata.name,
-            "description": metadata.description,
-            "sequence_type": metadata.sequence_type.value,
-            "width": metadata.width,
-            "height": metadata.height,
-            "fps": metadata.fps,
-            "source_path_type": metadata.source_path_type.value,
-            "source_path": metadata.source_path,
-            "encoder_type": metadata.encoder_type.value if metadata.encoder_type else None,
-            "encoder_params": metadata.encoder_params,
-            "encoder_path": metadata.encoder_path,
-            "enable_encode": metadata.enable_encode,
-            "output_dir": metadata.output_dir,
-            "skip_metrics": metadata.skip_metrics,
-            "metrics_types": metadata.metrics_types,
-            "created_at": metadata.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-            "updated_at": metadata.updated_at.strftime("%Y-%m-%d %H:%M:%S"),
-        },
-    }
-
-    return templates.TemplateResponse("template_detail.html", context)
+    return templates.TemplateResponse(
+        "template_form.html", {"request": request, "template_id": template_id}
+    )
 
 
 @router.get("/templates/{template_id}/edit", response_class=HTMLResponse)
