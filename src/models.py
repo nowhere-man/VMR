@@ -28,6 +28,7 @@ class JobMode(str, Enum):
     BITSTREAM_ANALYSIS = "bitstream_analysis"  # 码流分析：参考 + 多个编码文件
     COMPARISON = "comparison"  # 对比模式：对比两个模板的执行结果
     TEMPLATE = "template"  # 模板模式：使用模板执行转码
+    METRICS_ANALYSIS = "metrics_analysis"  # 单侧 Metrics 分析模板
 
 
 class CommandStatus(str, Enum):

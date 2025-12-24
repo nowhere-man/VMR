@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
-from src.models_template import EncodingTemplateMetadata
+from src.models_template import EncodingTemplateMetadata, TemplateType
 from src.schemas_template import (
     CreateTemplateRequest,
     CreateTemplateResponse,
@@ -120,6 +120,7 @@ async def get_template(template_id: str) -> TemplateResponse:
 )
 async def list_templates(
     limit: Optional[int] = None,
+    template_type: Optional[TemplateType] = None,
 ) -> List[TemplateListItem]:
     """
     列出所有模板
@@ -127,7 +128,7 @@ async def list_templates(
     - **encoder_type**: 可选的编码器类型过滤
     - **limit**: 可选的数量限制
     """
-    templates = template_storage.list_templates(limit=limit)
+    templates = template_storage.list_templates(limit=limit, template_type=template_type)
 
     return [
         TemplateListItem(
@@ -135,10 +136,11 @@ async def list_templates(
             name=t.metadata.name,
             description=t.metadata.description,
             created_at=t.metadata.created_at,
+            template_type=t.metadata.template_type.value,
             baseline_source_dir=t.metadata.baseline.source_dir,
             baseline_bitstream_dir=t.metadata.baseline.bitstream_dir,
-            experimental_source_dir=t.metadata.experimental.source_dir,
-            experimental_bitstream_dir=t.metadata.experimental.bitstream_dir,
+            experimental_source_dir=t.metadata.experimental.source_dir if t.metadata.experimental else None,
+            experimental_bitstream_dir=t.metadata.experimental.bitstream_dir if t.metadata.experimental else None,
             baseline_computed=t.metadata.baseline_computed,
         )
         for t in templates
@@ -196,6 +198,7 @@ async def update_template(
         template_id=metadata.template_id,
         name=metadata.name,
         description=metadata.description,
+        template_type=metadata.template_type.value,
         baseline=metadata.baseline,
         experimental=metadata.experimental,
         baseline_computed=metadata.baseline_computed,

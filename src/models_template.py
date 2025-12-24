@@ -18,6 +18,11 @@ class EncoderType(str, Enum):
     VVENC = "vvenc"
 
 
+class TemplateType(str, Enum):
+    COMPARISON = "comparison"  # Baseline vs Experimental
+    METRICS_ANALYSIS = "metrics_analysis"  # 单侧 Metrics 分析模板
+
+
 class RateControl(str, Enum):
     CRF = "crf"
     ABR = "abr"
@@ -64,8 +69,10 @@ class EncodingTemplateMetadata(BaseModel):
     name: str = Field(..., description="模板名称")
     description: Optional[str] = Field(None, description="模板描述")
 
+    template_type: TemplateType = Field(default=TemplateType.COMPARISON, description="模板类型")
+
     baseline: TemplateSideConfig
-    experimental: TemplateSideConfig
+    experimental: Optional[TemplateSideConfig] = None
 
     baseline_computed: bool = Field(default=False, description="Baseline 是否已计算完成")
     baseline_fingerprint: Optional[str] = Field(None, description="Baseline 配置指纹，用于变更检测")
@@ -77,6 +84,18 @@ class EncodingTemplateMetadata(BaseModel):
         extra="ignore",
         json_encoders={datetime: lambda v: v.isoformat()},
     )
+
+    @model_validator(mode="after")
+    def validate_by_type(self) -> "EncodingTemplateMetadata":
+        if self.template_type == TemplateType.COMPARISON:
+            if self.experimental is None:
+                raise ValueError("Comparison 模板需要 Experimental 配置")
+        else:
+            # Metrics 分析模板不需要 experimental，也不需要 baseline_computed
+            self.experimental = None
+            self.baseline_computed = False
+            self.baseline_fingerprint = None
+        return self
 
 
 class EncodingTemplate(BaseModel):

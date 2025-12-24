@@ -6,7 +6,7 @@
 <div class="min-h-[70vh] bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
   <div class="max-w-6xl mx-auto px-4 py-12 space-y-5">
     <div class="text-center">
-      <h1 class="text-4xl md:text-5xl font-semibold text-white">视频指标分析</h1>
+      <h1 class="text-3xl md:text-4xl font-semibold text-white">视频指标分析</h1>
     </div>
 
     <div class="h-2"></div>
@@ -151,6 +151,7 @@ const closeModalBtn = document.getElementById('closeTemplateModal');
 const cancelBtn = document.getElementById('cancelTemplateSelection');
 const confirmBtn = document.getElementById('confirmTemplateSelection');
 let templatesCache = [];
+let templateMode = "compare"; // compare | analyze
 
 function toggleTemplateModal(open) {
   if (open) {
@@ -174,6 +175,7 @@ function resetTemplateModal() {
   templateSelect.innerHTML = '';
   templateInfo.innerHTML = '';
   templateInfo.classList.add('hidden');
+  document.getElementById('createTemplateBtn').setAttribute('href', templateMode === 'analyze' ? '/templates/new?type=metrics' : '/templates/new');
   setModalState('loading');
 }
 
@@ -192,21 +194,35 @@ function updateTemplateInfo() {
     return;
   }
   const desc = tpl.description ? tpl.description : '该模板未填写描述';
-  const baselineInfo = `
-    <div class="text-xs text-gray-600 mt-2">
-      <div>Baseline 源: ${escapeHtml(tpl.baseline_source_dir || '')}</div>
-      <div>Baseline 码流: ${escapeHtml(tpl.baseline_bitstream_dir || '')}</div>
-      <div>Baseline 已计算: ${tpl.baseline_computed ? '是' : '否'}</div>
-      <div>Experimental 源: ${escapeHtml(tpl.experimental_source_dir || '')}</div>
-      <div>Experimental 码流: ${escapeHtml(tpl.experimental_bitstream_dir || '')}</div>
-    </div>`;
-  templateInfo.innerHTML = `
-    <div class="space-y-1">
-      <p><span class="font-medium text-gray-700">描述：</span>${escapeHtml(desc)}</p>
-      ${baselineInfo}
-      <p class="text-xs text-gray-400">模板 ID：${tpl.template_id}</p>
-    </div>
-  `;
+  if (templateMode === 'analyze') {
+    const infoHtml = `
+      <div class="space-y-1">
+        <p><span class="font-medium text-gray-700">描述：</span>${escapeHtml(desc)}</p>
+        <div class="text-xs text-gray-600 mt-2">
+          <div>源目录: ${escapeHtml(tpl.source_dir || '')}</div>
+          <div>码流目录: ${escapeHtml(tpl.bitstream_dir || '')}</div>
+        </div>
+        <p class="text-xs text-gray-400">模板 ID：${tpl.template_id}</p>
+      </div>
+    `;
+    templateInfo.innerHTML = infoHtml;
+  } else {
+    const baselineInfo = `
+      <div class="text-xs text-gray-600 mt-2">
+        <div>Baseline 源: ${escapeHtml(tpl.baseline_source_dir || '')}</div>
+        <div>Baseline 码流: ${escapeHtml(tpl.baseline_bitstream_dir || '')}</div>
+        <div>Baseline 已计算: ${tpl.baseline_computed ? '是' : '否'}</div>
+        <div>Experimental 源: ${escapeHtml(tpl.experimental_source_dir || '')}</div>
+        <div>Experimental 码流: ${escapeHtml(tpl.experimental_bitstream_dir || '')}</div>
+      </div>`;
+    templateInfo.innerHTML = `
+      <div class="space-y-1">
+        <p><span class="font-medium text-gray-700">描述：</span>${escapeHtml(desc)}</p>
+        ${baselineInfo}
+        <p class="text-xs text-gray-400">模板 ID：${tpl.template_id}</p>
+      </div>
+    `;
+  }
   templateInfo.classList.remove('hidden');
 }
 
@@ -223,16 +239,18 @@ function renderTemplateOptions() {
   confirmBtn.disabled = !templateSelect.value;
 }
 
-metricsCompareBtn.addEventListener('click', async () => {
-  const originalContent = metricsCompareBtn.innerHTML;
-  metricsCompareBtn.disabled = true;
-  metricsCompareBtn.innerHTML = '<span class="flex items-center"><svg class="mr-2 h-5 w-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v3m6.364 1.636l-2.121 2.121M21 12h-3m-1.636 6.364l-2.121-2.121M12 21v-3m-6.364-1.636l2.121-2.121M3 12h3m1.636-6.364l2.121 2.121" /></svg>加载模板...</span>';
+async function openTemplatePicker(mode) {
+  templateMode = mode;
+  const targetBtn = mode === 'analyze' ? metricsAnalyzeBtn : metricsCompareBtn;
+  const originalContent = targetBtn.innerHTML;
+  targetBtn.disabled = true;
+  targetBtn.innerHTML = '<span class="flex items-center"><svg class="mr-2 h-5 w-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v3m6.364 1.636l-2.121 2.121M21 12h-3m-1.636 6.364l-2.121-2.121M12 21v-3m-6.364-1.636l2.121-2.121M3 12h3m1.636-6.364l2.121 2.121" /></svg>加载模板...</span>';
 
   resetTemplateModal();
   toggleTemplateModal(true);
 
   try {
-    const res = await fetch('/api/templates');
+    const res = await fetch(mode === 'analyze' ? '/api/metrics-analysis/templates' : '/api/templates?template_type=comparison');
     if (!res.ok) throw new Error('无法获取模板列表');
     templatesCache = await res.json();
     if (!templatesCache.length) {
@@ -245,10 +263,15 @@ metricsCompareBtn.addEventListener('click', async () => {
     alert(err.message || '加载模板失败，请稍后重试');
     toggleTemplateModal(false);
   } finally {
-    metricsCompareBtn.disabled = false;
-    metricsCompareBtn.innerHTML = originalContent;
+    targetBtn.disabled = false;
+    targetBtn.innerHTML = originalContent;
   }
-});
+}
+
+metricsCompareBtn.addEventListener('click', () => openTemplatePicker('compare'));
+if (metricsAnalyzeBtn) {
+  metricsAnalyzeBtn.addEventListener('click', () => openTemplatePicker('analyze'));
+}
 
 templateSelect.addEventListener('change', () => {
   updateTemplateInfo();
@@ -261,7 +284,10 @@ confirmBtn.addEventListener('click', async () => {
   confirmBtn.disabled = true;
   confirmBtn.innerHTML = '<span class="flex items-center"><svg class="mr-2 h-4 w-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v3m6.364 1.636l-2.121 2.121M21 12h-3" /></svg>创建中...</span>';
   try {
-    const res = await fetch(`/api/templates/${selectedId}/execute`, {
+    const execUrl = templateMode === 'analyze'
+      ? `/api/metrics-analysis/templates/${selectedId}/execute`
+      : `/api/templates/${selectedId}/execute`;
+    const res = await fetch(execUrl, {
       method: 'POST'
     });
     const data = await res.json().catch(() => ({}));
@@ -288,10 +314,5 @@ templateModal.addEventListener('click', (e) => {
 });
 
 // Metrics 分析单模板快捷入口（直接跳转模板列表或新建）
-if (metricsAnalyzeBtn) {
-  metricsAnalyzeBtn.addEventListener('click', () => {
-    window.location.href = '/templates';
-  });
-}
 </script>
 {% endblock %}

@@ -6,13 +6,22 @@
 <div class="max-w-5xl mx-auto space-y-6">
   <div class="bg-white rounded-lg shadow-sm p-6">
     <h1 class="text-2xl font-bold text-gray-900">{{ '编辑模板' if template_id else '创建模板' }}</h1>
-    <p class="mt-1 text-sm text-gray-600">配置 Baseline / Experimental。</p>
+    <p class="mt-1 text-sm text-gray-600">配置转码模板（对比或 Metrics 分析）。</p>
   </div>
 
   <form id="templateForm" class="bg-white rounded-lg shadow-sm p-6 space-y-6">
     <!-- 基本信息 -->
     <div class="space-y-4">
       <h2 class="text-lg font-semibold text-gray-900">基本信息</h2>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">模板类型<span class="text-red-500">*</span></label>
+          <select id="template_type" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500">
+            <option value="metrics_analysis">Metrics分析</option>
+            <option value="comparison" selected>Metrics对比</option>
+          </select>
+        </div>
+      </div>
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">模板名称<span class="text-red-500">*</span></label>
         <input id="name" name="name" required maxlength="100" class="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500" />
@@ -23,10 +32,10 @@
       </div>
     </div>
 
-    <!-- Baseline -->
+    <!-- Baseline / 单侧 -->
     <div class="space-y-4 border-t pt-6">
       <div class="flex items-center justify-between">
-        <h2 class="text-lg font-semibold text-gray-900">Baseline 对照组</h2>
+        <h2 id="baseline_title" class="text-lg font-semibold text-gray-900">Baseline 对照组</h2>
         <label class="flex items-center text-sm text-gray-700 space-x-2">
           <input type="checkbox" id="baseline_skip" class="h-4 w-4 text-blue-600 border-gray-300 rounded" />
           <span>跳过视频编码</span>
@@ -76,7 +85,7 @@
     </div>
 
     <!-- Experimental -->
-    <div class="space-y-4 border-t pt-6">
+    <div id="exp_section" class="space-y-4 border-t pt-6">
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-semibold text-gray-900">Experimental 实验组</h2>
         <label class="flex items-center text-sm text-gray-700 space-x-2">
@@ -143,12 +152,17 @@ const tmplId = "{{ template_id or '' }}";
 const form = document.getElementById('templateForm');
 const errBox = document.getElementById('formError');
 const submitBtn = document.getElementById('submitBtn');
+const urlParams = new URLSearchParams(window.location.search);
+const initialType = urlParams.get('type') === 'metrics' ? 'metrics_analysis' : 'comparison';
 
 function $(id) { return document.getElementById(id); }
 const baselineSkip = $('baseline_skip');
 const expSkip = $('exp_skip');
 const baselineEncode = $('baseline_encode_block');
 const expEncode = $('exp_encode_block');
+const templateTypeSelect = $('template_type');
+const expSection = $('exp_section');
+const baselineTitle = $('baseline_title');
 
 function toggleBlocks() {
   baselineEncode.classList.toggle('hidden', baselineSkip.checked);
@@ -157,6 +171,18 @@ function toggleBlocks() {
 baselineSkip.addEventListener('change', toggleBlocks);
 expSkip.addEventListener('change', toggleBlocks);
 toggleBlocks();
+
+function applyTypeUI(type) {
+  if (type === 'metrics_analysis') {
+    expSection.classList.add('hidden');
+    baselineTitle.textContent = '编码配置';
+  } else {
+    expSection.classList.remove('hidden');
+    baselineTitle.textContent = 'Baseline 对照组';
+  }
+}
+templateTypeSelect.addEventListener('change', () => applyTypeUI(templateTypeSelect.value));
+applyTypeUI(initialType);
 
 function parsePoints(val) {
   if (!val) return [];
@@ -178,9 +204,20 @@ function collectSide(prefix) {
 async function loadTemplate() {
   if (!tmplId) return;
   try {
-    const res = await fetch(`/api/templates/${tmplId}`);
-    if (!res.ok) throw new Error('加载模板失败');
-    const data = await res.json();
+    let res = await fetch(`/api/templates/${tmplId}`);
+    let data;
+    if (res.ok) {
+      data = await res.json();
+    } else {
+      const metricsRes = await fetch(`/api/metrics-analysis/templates/${tmplId}`);
+      if (!metricsRes.ok) throw new Error('加载模板失败');
+      data = await metricsRes.json();
+      data.template_type = 'metrics_analysis';
+      data.baseline = data.config;
+      data.experimental = null;
+    }
+    templateTypeSelect.value = data.template_type || 'comparison';
+    applyTypeUI(templateTypeSelect.value);
     $('name').value = data.name || '';
     $('description').value = data.description || '';
     const fill = (prefix, side) => {
@@ -200,6 +237,9 @@ async function loadTemplate() {
     errBox.textContent = e.message || '加载模板失败';
   }
 }
+// 初始化类型选择
+templateTypeSelect.value = initialType;
+applyTypeUI(initialType);
 loadTemplate();
 
 form.addEventListener('submit', async (e) => {
@@ -212,8 +252,17 @@ form.addEventListener('submit', async (e) => {
     baseline: collectSide('baseline'),
     experimental: collectSide('exp'),
   };
+  const type = templateTypeSelect.value;
   const method = tmplId ? 'PUT' : 'POST';
-  const url = tmplId ? `/api/templates/${tmplId}` : '/api/templates';
+  let url;
+  if (type === 'metrics_analysis') {
+    url = tmplId ? `/api/metrics-analysis/templates/${tmplId}` : '/api/metrics-analysis/templates';
+    payload.config = payload.baseline;
+    delete payload.baseline;
+    delete payload.experimental;
+  } else {
+    url = tmplId ? `/api/templates/${tmplId}` : '/api/templates';
+  }
   try {
     const res = await fetch(url, {
       method,
@@ -222,7 +271,8 @@ form.addEventListener('submit', async (e) => {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || '保存失败');
-    window.location.href = '/templates';
+    const redirectType = type === 'metrics_analysis' ? '?type=metrics' : '';
+    window.location.href = '/templates' + redirectType;
   } catch (err) {
     errBox.textContent = err.message || '保存失败';
   } finally {

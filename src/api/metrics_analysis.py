@@ -1,0 +1,214 @@
+"""
+Metrics 分析模板 API
+"""
+from datetime import datetime
+from pathlib import Path
+from typing import List, Optional
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException
+
+from src.models import JobMetadata, JobMode, JobStatus
+from src.models_template import EncodingTemplateMetadata, TemplateType
+from src.schemas_metrics_analysis import (
+    CreateMetricsTemplateRequest,
+    MetricsTemplateListItem,
+    MetricsTemplateResponse,
+    UpdateMetricsTemplateRequest,
+    ValidateMetricsTemplateResponse,
+)
+from src.services.metrics_analysis_runner import metrics_analysis_runner
+from src.services.storage import job_storage
+from src.services.template_storage import template_storage
+
+router = APIRouter(prefix="/api/metrics-analysis", tags=["metrics-analysis"])
+
+
+@router.post(
+    "/templates",
+    response_model=dict,
+    status_code=201,
+    summary="创建 Metrics 分析模板",
+)
+async def create_metrics_template(request: CreateMetricsTemplateRequest) -> dict:
+    template_id = template_storage.generate_template_id()
+    metadata = EncodingTemplateMetadata(
+        template_id=template_id,
+        name=request.name,
+        description=request.description,
+        template_type=TemplateType.METRICS_ANALYSIS,
+        baseline=request.config,
+        experimental=None,
+    )
+    try:
+        template_storage.create_template(metadata)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"template_id": template_id, "status": "created"}
+
+
+@router.get(
+    "/templates",
+    response_model=List[MetricsTemplateListItem],
+    summary="列出 Metrics 分析模板",
+)
+async def list_metrics_templates(limit: Optional[int] = None) -> List[MetricsTemplateListItem]:
+    templates = template_storage.list_templates(limit=limit, template_type=TemplateType.METRICS_ANALYSIS)
+    items: List[MetricsTemplateListItem] = []
+    for t in templates:
+        items.append(
+            MetricsTemplateListItem(
+                template_id=t.template_id,
+                name=t.metadata.name,
+                description=t.metadata.description,
+                created_at=t.metadata.created_at,
+                source_dir=t.metadata.baseline.source_dir,
+                bitstream_dir=t.metadata.baseline.bitstream_dir,
+                template_type=t.metadata.template_type.value,
+            )
+        )
+    return items
+
+
+@router.get(
+    "/templates/{template_id}",
+    response_model=MetricsTemplateResponse,
+    summary="获取 Metrics 分析模板详情",
+)
+async def get_metrics_template(template_id: str) -> MetricsTemplateResponse:
+    template = template_storage.get_template(template_id)
+    if not template or template.metadata.template_type != TemplateType.METRICS_ANALYSIS:
+        raise HTTPException(status_code=404, detail=f"Template {template_id} not found")
+    return MetricsTemplateResponse(
+        template_id=template.template_id,
+        name=template.metadata.name,
+        description=template.metadata.description,
+        config=template.metadata.baseline,
+        created_at=template.metadata.created_at,
+        updated_at=template.metadata.updated_at,
+    )
+
+
+@router.put(
+    "/templates/{template_id}",
+    response_model=MetricsTemplateResponse,
+    summary="更新 Metrics 分析模板",
+)
+async def update_metrics_template(template_id: str, request: UpdateMetricsTemplateRequest) -> MetricsTemplateResponse:
+    template = template_storage.get_template(template_id)
+    if not template or template.metadata.template_type != TemplateType.METRICS_ANALYSIS:
+        raise HTTPException(status_code=404, detail=f"Template {template_id} not found")
+
+    if request.name is not None:
+        template.metadata.name = request.name
+    if request.description is not None:
+        template.metadata.description = request.description
+    if request.config is not None:
+        template.metadata.baseline = request.config
+
+    template_storage.update_template(template)
+
+    return MetricsTemplateResponse(
+        template_id=template.template_id,
+        name=template.metadata.name,
+        description=template.metadata.description,
+        config=template.metadata.baseline,
+        created_at=template.metadata.created_at,
+        updated_at=template.metadata.updated_at,
+    )
+
+
+@router.delete(
+    "/templates/{template_id}",
+    status_code=204,
+    summary="删除 Metrics 分析模板",
+)
+async def delete_metrics_template(template_id: str) -> None:
+    template = template_storage.get_template(template_id)
+    if not template or template.metadata.template_type != TemplateType.METRICS_ANALYSIS:
+        raise HTTPException(status_code=404, detail=f"Template {template_id} not found")
+    template_storage.delete_template(template_id)
+
+
+@router.get(
+    "/templates/{template_id}/validate",
+    response_model=ValidateMetricsTemplateResponse,
+    summary="验证 Metrics 模板路径",
+)
+async def validate_metrics_template(template_id: str) -> ValidateMetricsTemplateResponse:
+    template = template_storage.get_template(template_id)
+    if not template or template.metadata.template_type != TemplateType.METRICS_ANALYSIS:
+        raise HTTPException(status_code=404, detail=f"Template {template_id} not found")
+
+    def _dir_exists(p: str) -> bool:
+        return Path(p).is_dir()
+
+    def _writable(p: str) -> bool:
+        path = Path(p)
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            test = path / ".writetest"
+            test.write_text("ok")
+            test.unlink()
+            return True
+        except Exception:
+            return False
+
+    c = template.metadata.baseline
+    source_ok = _dir_exists(c.source_dir)
+    output_ok = _writable(c.bitstream_dir)
+
+    return ValidateMetricsTemplateResponse(
+        template_id=template_id,
+        source_exists=source_ok,
+        output_dir_writable=output_ok,
+        all_valid=source_ok and output_ok,
+    )
+
+
+@router.post(
+    "/templates/{template_id}/execute",
+    response_model=dict,
+    summary="执行 Metrics 分析模板",
+)
+async def execute_metrics_template(template_id: str, background_tasks: BackgroundTasks) -> dict:
+    template = template_storage.get_template(template_id)
+    if not template or template.metadata.template_type != TemplateType.METRICS_ANALYSIS:
+        raise HTTPException(status_code=404, detail=f"Template {template_id} not found")
+
+    job_id = job_storage.generate_job_id()
+    metadata = JobMetadata(
+        job_id=job_id,
+        mode=JobMode.METRICS_ANALYSIS,
+        status=JobStatus.PENDING,
+        template_a_id=template_id,
+        template_name=template.metadata.name,
+    )
+    job = job_storage.create_job(metadata)
+
+    async def execute_task():
+        try:
+            job.metadata.status = JobStatus.PROCESSING
+            job_storage.update_job(job)
+
+            result = await metrics_analysis_runner.execute(template, job=job)
+            job.metadata.execution_result = result
+            if result.get("failed"):
+                job.metadata.status = JobStatus.FAILED
+                first_err = (result.get("errors") or [{}])[0].get("error")
+                job.metadata.error_message = first_err or "执行失败"
+            else:
+                job.metadata.status = JobStatus.COMPLETED
+            job.metadata.completed_at = datetime.utcnow()
+            job_storage.update_job(job)
+        except Exception as exc:
+            job.metadata.status = JobStatus.FAILED
+            job.metadata.error_message = str(exc)
+            job_storage.update_job(job)
+
+    background_tasks.add_task(execute_task)
+
+    return {
+        "job_id": job_id,
+        "status": job.metadata.status.value,
+        "message": "Metrics 分析任务已创建，正在后台执行",
+    }

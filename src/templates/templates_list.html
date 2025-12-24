@@ -7,7 +7,7 @@
   <div class="flex items-center justify-between">
     <div>
       <h1 class="text-2xl font-bold text-gray-900">模板管理</h1>
-      <p class="text-sm text-gray-600">Baseline / Experimental 双侧配置</p>
+      <p class="text-sm text-gray-600">支持对比模板与 Metrics 分析模板</p>
     </div>
     <a href="/templates/new" class="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">新建模板</a>
   </div>
@@ -15,6 +15,15 @@
   <div id="loading" class="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700 hidden">正在加载模板...</div>
   <div id="emptyState" class="hidden rounded-lg border border-dashed border-gray-300 bg-gray-50 p-6 text-center text-gray-600">
     暂无模板，请创建一个新模板。
+  </div>
+
+  <div class="flex items-center gap-3">
+    <label class="text-sm text-gray-700">类型筛选：</label>
+    <select id="typeFilter" class="border rounded px-3 py-2 text-sm">
+      <option value="all">全部</option>
+      <option value="comparison">Metrics 对比模板</option>
+      <option value="metrics_analysis">Metrics 分析模板</option>
+    </select>
   </div>
 
   <div id="templatesGrid" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4"></div>
@@ -36,9 +45,27 @@ async function loadTemplates() {
   document.getElementById('emptyState').classList.add('hidden');
   document.getElementById('templatesGrid').classList.add('hidden');
   try {
-    const res = await fetch('/api/templates');
-    if (!res.ok) throw new Error('加载模板失败');
-    templates = await res.json();
+    const [compRes, metricsRes] = await Promise.all([
+      fetch('/api/templates'),
+      fetch('/api/metrics-analysis/templates')
+    ]);
+    if (!compRes.ok) throw new Error('加载对比模板失败');
+    if (!metricsRes.ok) throw new Error('加载 Metrics 模板失败');
+    const comp = await compRes.json();
+    const metrics = await metricsRes.json();
+    const normalizedMetrics = metrics.map(m => ({
+      template_id: m.template_id,
+      name: m.name,
+      description: m.description,
+      created_at: m.created_at,
+      template_type: m.template_type,
+      baseline_source_dir: m.source_dir,
+      baseline_bitstream_dir: m.bitstream_dir,
+      experimental_source_dir: null,
+      experimental_bitstream_dir: null,
+      baseline_computed: false,
+    }));
+    templates = [...comp, ...normalizedMetrics];
     document.getElementById('loading').classList.add('hidden');
     if (!templates.length) {
       document.getElementById('emptyState').classList.remove('hidden');
@@ -55,35 +82,40 @@ function renderTemplates() {
   const grid = document.getElementById('templatesGrid');
   grid.innerHTML = '';
   grid.classList.remove('hidden');
-  templates.forEach(tpl => {
+  const filter = document.getElementById('typeFilter').value;
+  const filtered = templates.filter(t => filter === 'all' || t.template_type === filter);
+  filtered.forEach(tpl => {
     const card = document.createElement('div');
     card.className = 'rounded-lg border border-gray-200 bg-white p-4 shadow-sm flex flex-col gap-2';
-    card.innerHTML = `
-      <div class="flex items-center justify-between">
-        <div>
-          <div class="text-lg font-semibold text-gray-900">${escapeHtml(tpl.name || tpl.template_id)}</div>
-          <div class="text-xs text-gray-500">ID: ${tpl.template_id}</div>
-        </div>
-        <span class="px-2 py-1 rounded text-xs font-medium ${tpl.baseline_computed ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
-          Baseline ${tpl.baseline_computed ? '已计算' : '未计算'}
-        </span>
-      </div>
-      <div class="text-sm text-gray-700">${escapeHtml(tpl.description || '无描述')}</div>
-      <div class="text-xs text-gray-600 bg-gray-50 rounded p-2">
-        <div class="font-semibold text-gray-700">Baseline</div>
-        <div>源目录：${escapeHtml(tpl.baseline_source_dir || '')}</div>
-        <div>码流目录：${escapeHtml(tpl.baseline_bitstream_dir || '')}</div>
-      </div>
+    const typeLabel = tpl.template_type === 'metrics_analysis' ? '<span class="ml-2 px-2 py-1 rounded text-xs font-medium bg-indigo-100 text-indigo-700">Metrics</span>' : '<span class="ml-2 px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-700">对比</span>';
+    const expBlock = tpl.template_type === 'metrics_analysis' ? '' : `
       <div class="text-xs text-gray-600 bg-gray-50 rounded p-2">
         <div class="font-semibold text-gray-700">Experimental</div>
         <div>源目录：${escapeHtml(tpl.experimental_source_dir || '')}</div>
         <div>码流目录：${escapeHtml(tpl.experimental_bitstream_dir || '')}</div>
+      </div>`;
+    card.innerHTML = `
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="text-lg font-semibold text-gray-900">${escapeHtml(tpl.name || tpl.template_id)} ${typeLabel}</div>
+          <div class="text-xs text-gray-500">ID: ${tpl.template_id}</div>
+        </div>
+        <span class="px-2 py-1 rounded text-xs font-medium ${tpl.baseline_computed ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
+          ${tpl.template_type === 'metrics_analysis' ? '单侧模板' : (tpl.baseline_computed ? 'Baseline 已计算' : 'Baseline 未计算')}
+        </span>
       </div>
+      <div class="text-sm text-gray-700">${escapeHtml(tpl.description || '无描述')}</div>
+      <div class="text-xs text-gray-600 bg-gray-50 rounded p-2">
+        <div class="font-semibold text-gray-700">${tpl.template_type === 'metrics_analysis' ? '编码配置' : 'Baseline'}</div>
+        <div>源目录：${escapeHtml(tpl.baseline_source_dir || '')}</div>
+        <div>码流目录：${escapeHtml(tpl.baseline_bitstream_dir || '')}</div>
+      </div>
+      ${expBlock}
       <div class="flex items-center justify-between text-xs text-gray-500">
         <span>创建时间：${tpl.created_at ? tpl.created_at.replace('T',' ').split('.')[0] : ''}</span>
         <div class="space-x-2">
-          <a href="/templates/${tpl.template_id}/edit" class="text-blue-600 hover:underline">编辑</a>
-          <button data-id="${tpl.template_id}" class="text-red-600 hover:underline delete-btn">删除</button>
+          <a href="/templates/${tpl.template_id}/edit${tpl.template_type === 'metrics_analysis' ? '?type=metrics' : ''}" class="text-blue-600 hover:underline">编辑</a>
+          <button data-id="${tpl.template_id}" data-type="${tpl.template_type}" class="text-red-600 hover:underline delete-btn">删除</button>
         </div>
       </div>
     `;
@@ -96,9 +128,11 @@ function bindDelete() {
   document.querySelectorAll('.delete-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const id = e.target.dataset.id;
+      const t = e.target.dataset.type;
       if (!confirm('确认删除该模板？')) return;
       try {
-        const res = await fetch(`/api/templates/${id}`, { method: 'DELETE' });
+        const url = t === 'metrics_analysis' ? `/api/metrics-analysis/templates/${id}` : `/api/templates/${id}`;
+        const res = await fetch(url, { method: 'DELETE' });
         if (!res.ok) throw new Error('删除失败');
         loadTemplates();
       } catch (err) {
@@ -107,6 +141,12 @@ function bindDelete() {
     });
   });
 }
+
+const typeFilter = document.getElementById('typeFilter');
+typeFilter.addEventListener('change', renderTemplates);
+const params = new URLSearchParams(window.location.search);
+const initType = params.get('type') === 'metrics' ? 'metrics_analysis' : 'all';
+typeFilter.value = initType;
 
 loadTemplates();
 </script>

@@ -11,7 +11,7 @@ from typing import List, Optional
 from nanoid import generate
 
 from src.config import settings
-from src.models_template import EncodingTemplate, EncodingTemplateMetadata
+from src.models_template import EncodingTemplate, EncodingTemplateMetadata, TemplateType
 
 
 class TemplateStorage:
@@ -94,6 +94,7 @@ class TemplateStorage:
     def list_templates(
         self,
         limit: Optional[int] = None,
+        template_type: Optional[TemplateType] = None,
     ) -> List[EncodingTemplate]:
         """
         列出所有模板
@@ -101,6 +102,7 @@ class TemplateStorage:
         Args:
             encoder_type: 可选的编码器类型过滤
             limit: 可选的数量限制
+            template_type: 可选的模板类型过滤
 
         Returns:
             模板列表，按创建时间倒序排列
@@ -123,9 +125,10 @@ class TemplateStorage:
                     metadata_dict = json.load(f)
                     metadata = EncodingTemplateMetadata(**metadata_dict)
 
-                    templates.append(
-                        EncodingTemplate(metadata=metadata, template_dir=template_dir)
-                    )
+                    if template_type is None or metadata.template_type == template_type:
+                        templates.append(
+                            EncodingTemplate(metadata=metadata, template_dir=template_dir)
+                        )
             except Exception:
                 # 跳过无效的元数据文件
                 continue

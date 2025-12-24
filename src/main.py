@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from src.api import jobs_router, pages_router, templates_router
+from src.api import jobs_router, metrics_analysis_router, pages_router, templates_router
 from src.config import settings
 from src.services import task_processor
 
@@ -43,6 +43,7 @@ app = FastAPI(
 app.include_router(jobs_router)
 app.include_router(pages_router)
 app.include_router(templates_router)
+app.include_router(metrics_analysis_router)
 
 # 配置静态文件和模板
 BASE_DIR = Path(__file__).resolve().parent
