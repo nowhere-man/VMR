@@ -110,6 +110,12 @@ def _output_extension(enc: EncoderType, src: SourceInfo, is_container: bool) -> 
     if enc == EncoderType.FFMPEG:
         if is_container:
             return src.path.suffix or ".mp4"
+        # 原始码流/裸流：沿用源后缀（h264/h265等），否则回退默认
+        suf = src.path.suffix.lower()
+        if suf in {".h265", ".265", ".hevc"}:
+            return ".h265"
+        if suf in {".h264", ".264"}:
+            return ".h264"
         return _encoder_extension(enc)
     return _encoder_extension(enc)
 
@@ -160,6 +166,8 @@ def _build_encode_cmd(
             ]
         else:
             cmd += ["-i", str(src.path)]
+            if not _is_container_file(src.path):
+                cmd += ["-s:v", f"{src.width}x{src.height}", "-r", str(src.fps)]
         cmd += _strip_rc_tokens(enc, params)
         if rc.lower() == "crf":
             cmd += ["-crf", val_str]

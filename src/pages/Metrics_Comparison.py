@@ -56,7 +56,7 @@ def _get_job_id() -> Optional[str]:
         if isinstance(job_id, list):
             job_id = job_id[0] if job_id else None
         return str(job_id) if job_id else None
-    return st.session_state.get("template_job_id")
+    return None
 
 
 def _load_report(job_id: str) -> Dict[str, Any]:
@@ -90,17 +90,23 @@ if not job_id:
     if not jobs:
         st.warning("暂未找到报告，请先创建任务。")
         st.stop()
-    options = {f"{item['job_id']} (最近修改)": item["job_id"] for item in jobs}
-    selected = st.selectbox("选择报告", options=list(options.keys()))
-    if selected:
-        chosen_job = options[selected]
-        st.session_state["template_job_id"] = chosen_job
+    st.subheader("全部Metrics对比报告")
+    for item in jobs:
+        jid = item["job_id"]
+        st.markdown(
+            f"- <a href='?template_job_id={jid}' target='_blank'>{jid} · metrics_analysis/report_data.json</a>",
+            unsafe_allow_html=True,
+        )
+    st.stop()
+else:
+    # 提供返回列表入口，清空参数后回到列表视图
+    if st.button("返回报告列表", type="secondary"):
         try:
-            st.query_params["template_job_id"] = chosen_job
+            st.query_params.clear()
         except Exception:
             pass
+        st.session_state.pop("template_job_id", None)
         st.rerun()
-    st.stop()
 
 st.session_state["template_job_id"] = job_id
 try:

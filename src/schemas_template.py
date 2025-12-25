@@ -38,8 +38,9 @@ class TemplateResponse(BaseModel):
     name: str
     description: Optional[str]
     template_type: str
-    baseline: TemplateSideConfig
-    experimental: Optional[TemplateSideConfig] = None
+    # 返回原始 dict，避免前端编辑时因路径校验失败
+    baseline: dict
+    experimental: Optional[dict] = None
     baseline_computed: bool
     baseline_fingerprint: Optional[str]
     created_at: datetime

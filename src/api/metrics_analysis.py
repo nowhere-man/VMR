@@ -19,6 +19,7 @@ from src.schemas_metrics_analysis import (
 from src.services.metrics_analysis_runner import metrics_analysis_runner
 from src.services.storage import job_storage
 from src.services.template_storage import template_storage
+from src.models_template import TemplateSideConfig
 
 router = APIRouter(prefix="/api/metrics-analysis", tags=["metrics-analysis"])
 
@@ -31,12 +32,13 @@ router = APIRouter(prefix="/api/metrics-analysis", tags=["metrics-analysis"])
 )
 async def create_metrics_template(request: CreateMetricsTemplateRequest) -> dict:
     template_id = template_storage.generate_template_id()
+    cfg = TemplateSideConfig(**request.config.model_dump())
     metadata = EncodingTemplateMetadata(
         template_id=template_id,
         name=request.name,
         description=request.description,
         template_type=TemplateType.METRICS_ANALYSIS,
-        baseline=request.config,
+        baseline=cfg,
         experimental=None,
     )
     try:
@@ -71,29 +73,20 @@ async def list_metrics_templates(limit: Optional[int] = None) -> List[MetricsTem
 
 @router.get(
     "/templates/{template_id}",
-    response_model=MetricsTemplateResponse,
     summary="获取 Metrics 分析模板详情",
 )
-async def get_metrics_template(template_id: str) -> MetricsTemplateResponse:
+async def get_metrics_template(template_id: str) -> dict:
     template = template_storage.get_template(template_id)
     if not template or template.metadata.template_type != TemplateType.METRICS_ANALYSIS:
         raise HTTPException(status_code=404, detail=f"Template {template_id} not found")
-    return MetricsTemplateResponse(
-        template_id=template.template_id,
-        name=template.metadata.name,
-        description=template.metadata.description,
-        config=template.metadata.baseline,
-        created_at=template.metadata.created_at,
-        updated_at=template.metadata.updated_at,
-    )
+    return template.metadata.model_dump(mode="json")
 
 
 @router.put(
     "/templates/{template_id}",
-    response_model=MetricsTemplateResponse,
     summary="更新 Metrics 分析模板",
 )
-async def update_metrics_template(template_id: str, request: UpdateMetricsTemplateRequest) -> MetricsTemplateResponse:
+async def update_metrics_template(template_id: str, request: UpdateMetricsTemplateRequest) -> dict:
     template = template_storage.get_template(template_id)
     if not template or template.metadata.template_type != TemplateType.METRICS_ANALYSIS:
         raise HTTPException(status_code=404, detail=f"Template {template_id} not found")
@@ -103,18 +96,11 @@ async def update_metrics_template(template_id: str, request: UpdateMetricsTempla
     if request.description is not None:
         template.metadata.description = request.description
     if request.config is not None:
-        template.metadata.baseline = request.config
+        template.metadata.baseline = TemplateSideConfig(**request.config.model_dump())
 
     template_storage.update_template(template)
 
-    return MetricsTemplateResponse(
-        template_id=template.template_id,
-        name=template.metadata.name,
-        description=template.metadata.description,
-        config=template.metadata.baseline,
-        created_at=template.metadata.created_at,
-        updated_at=template.metadata.updated_at,
-    )
+    return template.metadata.model_dump(mode="json")
 
 
 @router.delete(

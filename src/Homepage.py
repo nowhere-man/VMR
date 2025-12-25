@@ -153,7 +153,10 @@ if not recent_jobs:
 else:
     for item in recent_jobs:
         job_id = item["job_id"]
-        st.markdown(f"- <a href='/?job_id={job_id}' target='_self'>{job_id} · bitstream_analysis/report_data.json</a>", unsafe_allow_html=True)
+        st.markdown(
+            f"- <a href='/Stream_Analysis?job_id={job_id}' target='_blank'>{job_id} · bitstream_analysis/report_data.json</a>",
+            unsafe_allow_html=True,
+        )
 
 # 模板指标报告列表
 st.subheader("最近的Metrics对比报告")
@@ -164,7 +167,7 @@ else:
     for item in tpl_jobs:
         job_id = item["job_id"]
         st.markdown(
-            f"- <a href='/?template_job_id={job_id}' target='_self'>{job_id} · metrics_analysis/report_data.json</a>",
+            f"- <a href='/Metrics_Comparison?template_job_id={job_id}' target='_blank'>{job_id} · metrics_analysis/report_data.json</a>",
             unsafe_allow_html=True,
         )
 

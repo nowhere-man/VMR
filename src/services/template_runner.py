@@ -115,6 +115,11 @@ def _output_extension(enc: EncoderType, src: SourceInfo, is_container: bool) -> 
     if enc == EncoderType.FFMPEG:
         if is_container:
             return src.path.suffix or ".mp4"
+        suf = src.path.suffix.lower()
+        if suf in {".h265", ".265", ".hevc"}:
+            return ".h265"
+        if suf in {".h264", ".264"}:
+            return ".h264"
         return _encoder_extension(enc)
     return _encoder_extension(enc)
 
@@ -201,21 +206,19 @@ def _build_encode_cmd(
                 "rawvideo",
                 "-pix_fmt",
                 src.pix_fmt,
-                "-s",
+                "-s:v",
                 f"{src.width}x{src.height}",
                 "-r",
                 str(src.fps),
             ]
         cmd += ["-i", str(src.path)]
+        if not src.is_yuv and not _is_container_file(src.path):
+            cmd += ["-s:v", f"{src.width}x{src.height}", "-r", str(src.fps)]
         cmd += _strip_rc_tokens(enc, params)
         if rc.lower() == "crf":
             cmd += ["-crf", val_str]
         else:
             cmd += ["-b:v", f"{val_str}k"]
-        if src.is_yuv or src.path.suffix.lower() in {".h264", ".264"}:
-            cmd += ["-c:v", "libx264"]
-        elif src.path.suffix.lower() in {".h265", ".265", ".hevc"}:
-            cmd += ["-c:v", "libx265"]
         cmd += [str(output)]
         return cmd
 

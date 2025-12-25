@@ -145,13 +145,13 @@ async def templates_list_page(request: Request) -> HTMLResponse:
 async def create_template_page(request: Request) -> HTMLResponse:
     """创建新模板页面"""
     return templates.TemplateResponse(
-        "template_form.html", {"request": request, "template_id": None}
+        "template_form.html", {"request": request, "template_id": None, "readonly": False}
     )
 
 
 @router.get("/templates/{template_id}", response_class=HTMLResponse)
 async def template_detail_page(request: Request, template_id: str) -> HTMLResponse:
-    """模板详情页面（简化：复用表单编辑页）"""
+    """模板只读详情页面（复用表单样式，禁用编辑）"""
     template = template_storage.get_template(template_id)
 
     if not template:
@@ -165,7 +165,7 @@ async def template_detail_page(request: Request, template_id: str) -> HTMLRespon
         )
 
     return templates.TemplateResponse(
-        "template_form.html", {"request": request, "template_id": template_id}
+        "template_form.html", {"request": request, "template_id": template_id, "readonly": True}
     )
 
 
@@ -185,7 +185,31 @@ async def edit_template_page(request: Request, template_id: str) -> HTMLResponse
         )
 
     return templates.TemplateResponse(
-        "template_form.html", {"request": request, "template_id": template_id}
+        "template_form.html", {"request": request, "template_id": template_id, "readonly": False}
+    )
+
+
+@router.get("/templates/{template_id}/view", response_class=HTMLResponse)
+async def template_view_page(request: Request, template_id: str) -> HTMLResponse:
+    """模板只读详情页面"""
+    template = template_storage.get_template(template_id)
+
+    if not template:
+        return templates.TemplateResponse(
+            "base.html",
+            {
+                "request": request,
+                "error": f"Template {template_id} not found",
+            },
+            status_code=404,
+        )
+
+    return templates.TemplateResponse(
+        "template_view.html",
+        {
+            "request": request,
+            "template": template.metadata,
+        },
     )
 
 

@@ -22,6 +22,7 @@ from src.models import JobMetadata, JobMode, JobStatus
 from src.services.template_runner import template_runner
 from src.services.storage import job_storage
 from src.services.template_storage import template_storage
+from src.models_template import TemplateSideConfig
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
 
@@ -61,13 +62,17 @@ async def create_template(request: CreateTemplateRequest) -> CreateTemplateRespo
     # 生成模板 ID
     template_id = template_storage.generate_template_id()
 
+    # 显式转换为 TemplateSideConfig，避免 Pydantic 类型不匹配
+    baseline_cfg = TemplateSideConfig(**request.baseline.model_dump())
+    experimental_cfg = TemplateSideConfig(**request.experimental.model_dump())
+
     # 创建模板元数据
     metadata = EncodingTemplateMetadata(
         template_id=template_id,
         name=request.name,
         description=request.description,
-        baseline=request.baseline,  # Pydantic 会自动转换为 TemplateSideConfig
-        experimental=request.experimental,
+        baseline=baseline_cfg,
+        experimental=experimental_cfg,
     )
     metadata.baseline_fingerprint = _fingerprint(metadata.baseline)
 
@@ -84,10 +89,9 @@ async def create_template(request: CreateTemplateRequest) -> CreateTemplateRespo
 
 @router.get(
     "/{template_id}",
-    response_model=TemplateResponse,
     summary="获取模板详情",
 )
-async def get_template(template_id: str) -> TemplateResponse:
+async def get_template(template_id: str) -> dict:
     """
     获取模板详情
 
@@ -99,18 +103,7 @@ async def get_template(template_id: str) -> TemplateResponse:
         raise HTTPException(status_code=404, detail=f"Template {template_id} not found")
 
     metadata = template.metadata
-
-    return TemplateResponse(
-        template_id=metadata.template_id,
-        name=metadata.name,
-        description=metadata.description,
-        baseline=metadata.baseline,
-        experimental=metadata.experimental,
-        baseline_computed=metadata.baseline_computed,
-        baseline_fingerprint=metadata.baseline_fingerprint,
-        created_at=metadata.created_at,
-        updated_at=metadata.updated_at,
-    )
+    return metadata.model_dump(mode="json")
 
 
 @router.get(
@@ -149,12 +142,11 @@ async def list_templates(
 
 @router.put(
     "/{template_id}",
-    response_model=TemplateResponse,
     summary="更新模板",
 )
 async def update_template(
     template_id: str, request: UpdateTemplateRequest
-) -> TemplateResponse:
+) -> dict:
     """
     更新模板配置
 
@@ -172,10 +164,10 @@ async def update_template(
     if request.description is not None:
         template.metadata.description = request.description
     if request.baseline is not None:
-        template.metadata.baseline = request.baseline
+        template.metadata.baseline = TemplateSideConfig(**request.baseline.model_dump())
         baseline_changed = True
     if request.experimental is not None:
-        template.metadata.experimental = request.experimental
+        template.metadata.experimental = TemplateSideConfig(**request.experimental.model_dump())
 
     if baseline_changed:
         template.metadata.baseline_computed = False
@@ -194,18 +186,7 @@ async def update_template(
 
     metadata = template.metadata
 
-    return TemplateResponse(
-        template_id=metadata.template_id,
-        name=metadata.name,
-        description=metadata.description,
-        template_type=metadata.template_type.value,
-        baseline=metadata.baseline,
-        experimental=metadata.experimental,
-        baseline_computed=metadata.baseline_computed,
-        baseline_fingerprint=metadata.baseline_fingerprint,
-        created_at=metadata.created_at,
-        updated_at=metadata.updated_at,
-    )
+    return metadata.model_dump(mode="json")
 
 
 @router.delete(

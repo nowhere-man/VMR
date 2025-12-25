@@ -76,7 +76,7 @@ class TemplateStorage:
         try:
             with open(metadata_path, "r", encoding="utf-8") as f:
                 metadata_dict = json.load(f)
-                metadata = EncodingTemplateMetadata(**metadata_dict)
+                metadata = EncodingTemplateMetadata.model_validate(metadata_dict, context={"skip_path_check": True})
                 return EncodingTemplate(metadata=metadata, template_dir=template_dir)
         except Exception:
             return None

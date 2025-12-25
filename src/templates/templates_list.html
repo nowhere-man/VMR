@@ -94,15 +94,18 @@ function renderTemplates() {
         <div>源目录：${escapeHtml(tpl.experimental_source_dir || '')}</div>
         <div>码流目录：${escapeHtml(tpl.experimental_bitstream_dir || '')}</div>
       </div>`;
+    const statusHtml = tpl.template_type === 'metrics_analysis'
+      ? '<span class="px-2 py-1 rounded text-xs font-medium text-gray-700 border border-gray-200">单侧模板</span>'
+      : (tpl.baseline_computed
+          ? '<span class="px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800 border border-green-200">Baseline 已计算</span>'
+          : '<span class="text-xs font-medium text-gray-500">Baseline 未计算</span>');
     card.innerHTML = `
       <div class="flex items-center justify-between">
         <div>
           <div class="text-lg font-semibold text-gray-900">${escapeHtml(tpl.name || tpl.template_id)} ${typeLabel}</div>
           <div class="text-xs text-gray-500">ID: ${tpl.template_id}</div>
         </div>
-        <span class="px-2 py-1 rounded text-xs font-medium ${tpl.baseline_computed ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
-          ${tpl.template_type === 'metrics_analysis' ? '单侧模板' : (tpl.baseline_computed ? 'Baseline 已计算' : 'Baseline 未计算')}
-        </span>
+        ${statusHtml}
       </div>
       <div class="text-sm text-gray-700">${escapeHtml(tpl.description || '无描述')}</div>
       <div class="text-xs text-gray-600 bg-gray-50 rounded p-2">
@@ -114,8 +117,9 @@ function renderTemplates() {
       <div class="flex items-center justify-between text-xs text-gray-500">
         <span>创建时间：${tpl.created_at ? tpl.created_at.replace('T',' ').split('.')[0] : ''}</span>
         <div class="space-x-2">
-          <a href="/templates/${tpl.template_id}/edit${tpl.template_type === 'metrics_analysis' ? '?type=metrics' : ''}" class="text-blue-600 hover:underline">编辑</a>
-          <button data-id="${tpl.template_id}" data-type="${tpl.template_type}" class="text-red-600 hover:underline delete-btn">删除</button>
+          <a href="/templates/${tpl.template_id}" class="inline-flex items-center px-3 py-1 rounded border border-gray-300 text-sm text-gray-700 hover:bg-gray-100">查看</a>
+          <a href="/templates/${tpl.template_id}/edit${tpl.template_type === 'metrics_analysis' ? '?type=metrics' : ''}" class="inline-flex items-center px-3 py-1 rounded border border-blue-500 text-sm text-blue-600 hover:bg-blue-50">编辑</a>
+          <button data-id="${tpl.template_id}" data-type="${tpl.template_type}" class="inline-flex items-center px-3 py-1 rounded border border-red-400 text-sm text-red-600 hover:bg-red-50 delete-btn">删除</button>
         </div>
       </div>
     `;

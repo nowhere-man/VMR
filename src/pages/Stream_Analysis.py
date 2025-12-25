@@ -101,9 +101,8 @@ def _plot_frame_lines(
 
 
 st.set_page_config(page_title="码流分析", page_icon="📊", layout="wide")
-
 st.markdown("<h1 style='text-align:center;'>📊 码流分析报告</h1>", unsafe_allow_html=True)
-
+st.subheader("全部码流分析报告")
 job_id = _get_job_id()
 if not job_id:
     jobs = _list_bitstream_jobs()
@@ -113,7 +112,7 @@ if not job_id:
 
     for item in jobs:
         jid = item["job_id"]
-        st.markdown(f"- <a href='?job_id={jid}' target='_self'>{jid} · bitstream_analysis/report_data.json</a>", unsafe_allow_html=True)
+        st.markdown(f"- <a href='?job_id={jid}' target='_blank'>{jid} · bitstream_analysis/report_data.json</a>", unsafe_allow_html=True)
     st.stop()
 
 # 保持 session_state，方便从首页跳转

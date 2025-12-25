@@ -43,9 +43,11 @@ class TemplateSideConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_fields(self) -> "TemplateSideConfig":
+        ctx = getattr(self, "__pydantic_context__", {}) or {}
+        skip_path_check = ctx.get("skip_path_check")
         if not self.source_dir.strip():
             raise ValueError("source_dir 不能为空")
-        if not Path(self.source_dir).is_dir():
+        if not skip_path_check and not Path(self.source_dir).is_dir():
             raise ValueError(f"源视频目录不存在: {self.source_dir}")
         if not self.bitstream_dir.strip():
             raise ValueError("bitstream_dir 不能为空")

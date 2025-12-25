@@ -35,7 +35,8 @@ class MetricsTemplateResponse(BaseModel):
     template_id: str
     name: str
     description: Optional[str]
-    config: TemplateSideConfig
+    # 返回 dict，避免前端编辑时路径校验
+    config: dict
     created_at: datetime
     updated_at: datetime
     template_type: str = Field(default="metrics_analysis")

@@ -9,7 +9,7 @@
     <p class="mt-1 text-sm text-gray-600">配置转码模板（对比或 Metrics 分析）。</p>
   </div>
 
-  <form id="templateForm" class="bg-white rounded-lg shadow-sm p-6 space-y-6">
+<form id="templateForm" class="bg-white rounded-lg shadow-sm p-6 space-y-6">
     <!-- 基本信息 -->
     <div class="space-y-4">
       <h2 class="text-lg font-semibold text-gray-900">基本信息</h2>
@@ -140,8 +140,12 @@
     <div class="flex items-center justify-between pt-4 border-t">
       <div id="formError" class="text-sm text-red-600"></div>
       <div class="space-x-3">
-        <a href="/templates" class="text-sm text-gray-600 hover:text-gray-900">取消</a>
+        <a href="/templates" class="text-sm text-gray-600 hover:text-gray-900">返回</a>
+        {% if readonly %}
+        <a href="/templates/{{ template_id }}/edit{% if request.query_params.get('type') == 'metrics' %}?type=metrics{% endif %}" class="px-4 py-2 rounded bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">编辑</a>
+        {% else %}
         <button id="submitBtn" type="submit" class="px-4 py-2 rounded bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">保存模板</button>
+        {% endif %}
       </div>
     </div>
   </form>
@@ -149,6 +153,7 @@
 
 <script>
 const tmplId = "{{ template_id or '' }}";
+const READONLY = {{ 'true' if readonly else 'false' }};
 const form = document.getElementById('templateForm');
 const errBox = document.getElementById('formError');
 const submitBtn = document.getElementById('submitBtn');
@@ -233,9 +238,24 @@ async function loadTemplate() {
     fill('baseline', data.baseline);
     fill('exp', data.experimental);
     toggleBlocks();
+    if (READONLY) setReadonlyMode();
   } catch (e) {
     errBox.textContent = e.message || '加载模板失败';
   }
+}
+
+function setReadonlyMode() {
+  if (!READONLY) return;
+  const inputs = form.querySelectorAll('input, select, textarea, button');
+  inputs.forEach(el => {
+    // 保留顶部导航的“返回/编辑”按钮
+    if (el.id === 'submitBtn') {
+      el.style.display = 'none';
+      return;
+    }
+    if (el.closest('a')) return;
+    el.disabled = true;
+  });
 }
 // 初始化类型选择
 templateTypeSelect.value = initialType;
@@ -243,6 +263,10 @@ applyTypeUI(initialType);
 loadTemplate();
 
 form.addEventListener('submit', async (e) => {
+  if (READONLY) {
+    e.preventDefault();
+    return;
+  }
   e.preventDefault();
   errBox.textContent = '';
   submitBtn.disabled = true;
