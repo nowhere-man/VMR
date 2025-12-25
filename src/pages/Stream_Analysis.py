@@ -21,56 +21,25 @@ import streamlit as st
 project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
 
-from src.config import settings
-
-
-def _jobs_root_dir() -> Path:
-    root = settings.jobs_root_dir
-    if root.is_absolute():
-        return root
-    return (project_root / root).resolve()
+from src.utils.streamlit_helpers import (
+    jobs_root_dir as _jobs_root_dir,
+    list_jobs,
+    get_query_param,
+    load_json_report,
+)
 
 
 def _list_bitstream_jobs(limit: int = 50) -> List[Dict[str, Any]]:
     """列出包含码流分析报告的任务（按报告文件修改时间倒序）。"""
-    root = _jobs_root_dir()
-    if not root.exists():
-        return []
-
-    items: List[Dict[str, Any]] = []
-    for job_dir in root.iterdir():
-        if not job_dir.is_dir():
-            continue
-        report_path = job_dir / "bitstream_analysis" / "report_data.json"
-        if report_path.exists():
-            mtime = report_path.stat().st_mtime
-            items.append(
-                {
-                    "job_id": job_dir.name,
-                    "mtime": mtime,
-                    "report_path": report_path,
-                }
-            )
-
-    items.sort(key=lambda x: x["mtime"], reverse=True)
-    return items[:limit]
+    return list_jobs("bitstream_analysis/report_data.json", limit=limit)
 
 
 def _get_job_id() -> Optional[str]:
-    job_id = st.query_params.get("job_id")
-    if job_id:
-        if isinstance(job_id, list):
-            job_id = job_id[0] if job_id else None
-        return str(job_id) if job_id else None
-    return None
+    return get_query_param("job_id")
 
 
 def _load_report(job_id: str) -> Dict[str, Any]:
-    report_path = _jobs_root_dir() / job_id / "bitstream_analysis" / "report_data.json"
-    if not report_path.exists():
-        raise FileNotFoundError(f"未找到报告数据文件: {report_path}")
-    with open(report_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    return load_json_report(job_id, "bitstream_analysis/report_data.json")
 
 
 def _plot_frame_lines(
@@ -141,7 +110,6 @@ st.caption(
     f"Job: {job_id} | Ref: {ref.get('label')} | "
     f"{ref.get('width')}x{ref.get('height')} @ {ref.get('fps')} fps | {ref.get('frames')} frames"
 )
-st.info("说明：所有打分输入统一转换为 yuv420p；若 Encoded 分辨率不一致会先对齐到 Ref；若帧数/时长不一致任务会直接失败。")
 
 if not encoded_items:
     st.warning("报告中未包含任何 Encoded 数据。")

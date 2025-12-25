@@ -12,65 +12,28 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import scipy.interpolate  # type: ignore
 import streamlit as st
 
 # 添加项目根目录到Python路径
 project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
 
-from src.config import settings
-
-
-def _jobs_root_dir() -> Path:
-    root = settings.jobs_root_dir
-    if root.is_absolute():
-        return root
-    return (project_root / root).resolve()
+from src.utils.bd_rate import bd_rate as _bd_rate, bd_metrics as _bd_metrics
+from src.utils.streamlit_helpers import (
+    jobs_root_dir as _jobs_root_dir,
+    list_jobs,
+    load_json_report,
+    parse_rate_point as _parse_point,
+    create_cpu_chart,
+)
 
 
 def _list_metrics_jobs(limit: int = 100) -> List[Dict[str, Any]]:
-    root = _jobs_root_dir()
-    if not root.exists():
-        return []
-    items: List[Dict[str, Any]] = []
-    for job_dir in root.iterdir():
-        if not job_dir.is_dir():
-            continue
-        data_path = job_dir / "metrics_analysis" / "analyse_data.json"
-        meta_path = job_dir / "metadata.json"
-        if not data_path.exists():
-            continue
-        status_ok = True
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
-            status_ok = meta.get("status") == "COMPLETED"
-        except Exception:
-            status_ok = True
-        items.append({"job_id": job_dir.name, "mtime": data_path.stat().st_mtime, "status_ok": status_ok})
-    items.sort(key=lambda x: x["mtime"], reverse=True)
-    return items[:limit]
+    return list_jobs("metrics_analysis/analyse_data.json", limit=limit, check_status=True)
 
 
 def _load_analyse(job_id: str) -> Dict[str, Any]:
-    path = _jobs_root_dir() / job_id / "metrics_analysis" / "analyse_data.json"
-    if not path.exists():
-        raise FileNotFoundError(f"未找到数据文件: {path}")
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _parse_point(label: str) -> Tuple[Optional[str], Optional[float]]:
-    if not label:
-        return None, None
-    parts = label.rsplit("_", 2)
-    if len(parts) < 3:
-        return None, None
-    rc = parts[-2]
-    try:
-        val = float(parts[-1])
-    except Exception:
-        return rc, None
-    return rc, val
+    return load_json_report(job_id, "metrics_analysis/analyse_data.json")
 
 
 def _metric_value(metrics: Dict[str, Any], name: str, field: str) -> Optional[float]:
@@ -81,68 +44,6 @@ def _metric_value(metrics: Dict[str, Any], name: str, field: str) -> Optional[fl
     if isinstance(summary, dict) and field in summary:
         return summary.get(field)
     return block.get(field)
-
-
-def _bd_rate(rate1: List[float], metric1: List[float], rate2: List[float], metric2: List[float], piecewise: int = 0) -> Optional[float]:
-    if len(rate1) < 4 or len(rate2) < 4:
-        return None
-    lR1 = np.log(rate1)
-    lR2 = np.log(rate2)
-    try:
-        p1 = np.polyfit(metric1, lR1, 3)
-        p2 = np.polyfit(metric2, lR2, 3)
-    except Exception:
-        return None
-    min_int = max(min(metric1), min(metric2))
-    max_int = min(max(metric1), max(metric2))
-    if max_int <= min_int:
-        return None
-    if piecewise == 0:
-        p_int1 = np.polyint(p1)
-        p_int2 = np.polyint(p2)
-        int1 = np.polyval(p_int1, max_int) - np.polyval(p_int1, min_int)
-        int2 = np.polyval(p_int2, max_int) - np.polyval(p_int2, min_int)
-    else:
-        lin = np.linspace(min_int, max_int, num=100, retstep=True)
-        interval = lin[1]
-        samples = lin[0]
-        v1 = scipy.interpolate.pchip_interpolate(np.sort(metric1), lR1[np.argsort(metric1)], samples)
-        v2 = scipy.interpolate.pchip_interpolate(np.sort(metric2), lR2[np.argsort(metric2)], samples)
-        int1 = np.trapz(v1, dx=interval)
-        int2 = np.trapz(v2, dx=interval)
-    avg_exp_diff = (int2 - int1) / (max_int - min_int)
-    return (np.exp(avg_exp_diff) - 1) * 100
-
-
-def _bd_metrics(rate1: List[float], metric1: List[float], rate2: List[float], metric2: List[float], piecewise: int = 0) -> Optional[float]:
-    if len(rate1) < 4 or len(rate2) < 4:
-        return None
-    lR1 = np.log(rate1)
-    lR2 = np.log(rate2)
-    try:
-        p1 = np.polyfit(lR1, metric1, 3)
-        p2 = np.polyfit(lR2, metric2, 3)
-    except Exception:
-        return None
-    min_int = max(min(lR1), min(lR2))
-    max_int = min(max(lR1), max(lR2))
-    if max_int <= min_int:
-        return None
-    if piecewise == 0:
-        p_int1 = np.polyint(p1)
-        p_int2 = np.polyint(p2)
-        int1 = np.polyval(p_int1, max_int) - np.polyval(p_int1, min_int)
-        int2 = np.polyval(p_int2, max_int) - np.polyval(p_int2, min_int)
-    else:
-        lin = np.linspace(min_int, max_int, num=100, retstep=True)
-        interval = lin[1]
-        samples = lin[0]
-        v1 = scipy.interpolate.pchip_interpolate(np.sort(lR1), metric1[np.argsort(lR1)], samples)
-        v2 = scipy.interpolate.pchip_interpolate(np.sort(lR2), metric2[np.argsort(lR2)], samples)
-        int1 = np.trapz(v1, dx=interval)
-        int2 = np.trapz(v2, dx=interval)
-    avg_diff = (int2 - int1) / (max_int - min_int)
-    return avg_diff
 
 
 def _build_rows(data: Dict[str, Any], side_label: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
@@ -421,79 +322,14 @@ if perf_rows:
             else:
                 exp_samples = row.get("cpu_samples", []) or []
 
-    def _aggregate_samples(samples: List[float], interval_ms: int) -> Tuple[List[float], List[float]]:
-        """聚合CPU采样数据"""
-        if not samples:
-            return [], []
-        # 原始采样间隔为100ms
-        step = interval_ms // 100
-        if step <= 1:
-            # 不聚合
-            x = [i * 0.1 for i in range(len(samples))]
-            return x, samples
-        # 聚合
-        agg_samples = []
-        for i in range(0, len(samples), step):
-            chunk = samples[i:i+step]
-            if chunk:
-                agg_samples.append(sum(chunk) / len(chunk))
-        x = [i * (interval_ms / 1000) for i in range(len(agg_samples))]
-        return x, agg_samples
-
     if base_samples or exp_samples:
-        base_x, base_y = _aggregate_samples(base_samples, agg_interval)
-        exp_x, exp_y = _aggregate_samples(exp_samples, agg_interval)
-
-        fig_cpu = go.Figure()
-
-        # A 折线
-        if base_y:
-            fig_cpu.add_trace(go.Scatter(
-                x=base_x, y=base_y,
-                mode="lines",
-                name="A",
-                line=dict(color="#2563eb", width=2),
-            ))
-            # 标记最大值
-            if base_y:
-                max_idx = base_y.index(max(base_y))
-                fig_cpu.add_trace(go.Scatter(
-                    x=[base_x[max_idx]], y=[base_y[max_idx]],
-                    mode="markers+text",
-                    name="A Max",
-                    marker=dict(color="#2563eb", size=12, symbol="star"),
-                    text=[f"Max: {base_y[max_idx]:.1f}%"],
-                    textposition="top center",
-                    showlegend=False,
-                ))
-
-        # B 折线
-        if exp_y:
-            fig_cpu.add_trace(go.Scatter(
-                x=exp_x, y=exp_y,
-                mode="lines",
-                name="B",
-                line=dict(color="#dc2626", width=2),
-            ))
-            # 标记最大值
-            if exp_y:
-                max_idx = exp_y.index(max(exp_y))
-                fig_cpu.add_trace(go.Scatter(
-                    x=[exp_x[max_idx]], y=[exp_y[max_idx]],
-                    mode="markers+text",
-                    name="B Max",
-                    marker=dict(color="#dc2626", size=12, symbol="star"),
-                    text=[f"Max: {exp_y[max_idx]:.1f}%"],
-                    textposition="top center",
-                    showlegend=False,
-                ))
-
-        fig_cpu.update_layout(
+        fig_cpu = create_cpu_chart(
+            base_samples=base_samples,
+            exp_samples=exp_samples,
+            agg_interval=agg_interval,
             title=f"CPU占用率 - {selected_video_perf} ({selected_point_perf})",
-            xaxis_title="Time (s)",
-            yaxis_title="CPU (%)",
-            hovermode="x unified",
-            legend=dict(orientation="h", y=-0.15),
+            base_label="A",
+            exp_label="B",
         )
         st.plotly_chart(fig_cpu, use_container_width=True)
     else:

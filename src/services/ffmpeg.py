@@ -4,14 +4,13 @@ FFmpeg 服务
 提供视频处理和质量指标计算功能
 """
 import asyncio
-import csv
 import json
 import subprocess
-from io import StringIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.config import settings
+from src.utils.metrics import parse_psnr_summary, parse_ssim_summary, parse_vmaf_summary
 
 
 class FFmpegService:
@@ -328,7 +327,7 @@ class FFmpegService:
                 raise RuntimeError(f"PSNR calculation failed: {stderr.decode()}")
 
             # 解析 PSNR 日志
-            result = await self._parse_psnr_log(output_log)
+            result = parse_psnr_summary(output_log)
             if update_status_callback and cmd_id:
                 update_status_callback(cmd_id, "completed")
             return result
@@ -419,7 +418,7 @@ class FFmpegService:
                 raise RuntimeError(f"SSIM calculation failed: {stderr.decode()}")
 
             # 解析 SSIM 日志
-            result = await self._parse_ssim_log(output_log)
+            result = parse_ssim_summary(output_log)
             if update_status_callback and cmd_id:
                 update_status_callback(cmd_id, "completed")
             return result
@@ -521,7 +520,7 @@ class FFmpegService:
                 raise RuntimeError(f"VMAF calculation failed: {stderr.decode()}")
 
             # 解析 VMAF JSON
-            result = await self._parse_vmaf_json(output_json)
+            result = parse_vmaf_summary(output_json)
             if update_status_callback and cmd_id:
                 update_status_callback(cmd_id, "completed")
             return result
@@ -603,134 +602,6 @@ class FFmpegService:
             if update_status_callback and cmd_id:
                 update_status_callback(cmd_id, "failed", str(e))
             raise RuntimeError(f"Failed to encode video: {str(e)}")
-
-    async def _parse_psnr_log(self, log_path: Path) -> Dict[str, float]:
-        """解析 PSNR 日志文件"""
-        # PSNR 日志格式: n:1 mse_avg:0.52 mse_y:0.48 mse_u:0.58 mse_v:0.52 psnr_avg:50.99 psnr_y:51.31 psnr_u:50.48 psnr_v:50.97
-        try:
-            with open(log_path, "r") as f:
-                lines = f.readlines()
-
-            # 计算平均值
-            psnr_y_sum, psnr_u_sum, psnr_v_sum, psnr_avg_sum = 0.0, 0.0, 0.0, 0.0
-            count = 0
-
-            for line in lines:
-                if "psnr_avg" in line:
-                    parts = line.strip().split()
-                    for part in parts:
-                        if part.startswith("psnr_avg:"):
-                            psnr_avg_sum += float(part.split(":")[1])
-                        elif part.startswith("psnr_y:"):
-                            psnr_y_sum += float(part.split(":")[1])
-                        elif part.startswith("psnr_u:"):
-                            psnr_u_sum += float(part.split(":")[1])
-                        elif part.startswith("psnr_v:"):
-                            psnr_v_sum += float(part.split(":")[1])
-                    count += 1
-
-            if count == 0:
-                raise ValueError("No PSNR data found in log")
-
-            return {
-                "psnr_avg": psnr_avg_sum / count,
-                "psnr_y": psnr_y_sum / count,
-                "psnr_u": psnr_u_sum / count,
-                "psnr_v": psnr_v_sum / count,
-            }
-
-        except Exception as e:
-            raise RuntimeError(f"Failed to parse PSNR log: {str(e)}")
-
-    async def _parse_ssim_log(self, log_path: Path) -> Dict[str, float]:
-        """解析 SSIM 日志文件"""
-        # SSIM 日志格式类似 PSNR
-        try:
-            with open(log_path, "r") as f:
-                lines = f.readlines()
-
-            ssim_y_sum, ssim_u_sum, ssim_v_sum, ssim_avg_sum = 0.0, 0.0, 0.0, 0.0
-            count = 0
-
-            for line in lines:
-                if "All:" in line:
-                    parts = line.strip().split()
-                    for part in parts:
-                        if part.startswith("All:"):
-                            ssim_avg_sum += float(part.split(":")[1])
-                        elif part.startswith("Y:"):
-                            ssim_y_sum += float(part.split(":")[1])
-                        elif part.startswith("U:"):
-                            ssim_u_sum += float(part.split(":")[1])
-                        elif part.startswith("V:"):
-                            ssim_v_sum += float(part.split(":")[1])
-                    count += 1
-
-            if count == 0:
-                raise ValueError("No SSIM data found in log")
-
-            return {
-                "ssim_avg": ssim_avg_sum / count,
-                "ssim_y": ssim_y_sum / count,
-                "ssim_u": ssim_u_sum / count,
-                "ssim_v": ssim_v_sum / count,
-            }
-
-        except Exception as e:
-            raise RuntimeError(f"Failed to parse SSIM log: {str(e)}")
-
-    async def _parse_vmaf_json(self, json_path: Path) -> Dict[str, float]:
-        """解析 VMAF 日志文件（支持 json 或 csv 日志格式）"""
-
-        def _safe_float(val: Any) -> Optional[float]:
-            try:
-                return float(val)
-            except (TypeError, ValueError):
-                return None
-
-        def _mean(values: List[float]) -> float:
-            return sum(values) / len(values) if values else 0.0
-
-        def _harmonic_mean(values: List[float]) -> float:
-            positives = [v for v in values if v and v > 0]
-            return len(positives) / sum(1.0 / v for v in positives) if positives else 0.0
-
-        def _parse_csv(text: str) -> Dict[str, float]:
-            reader = csv.DictReader(StringIO(text))
-            vmaf_vals: List[float] = []
-            vmaf_neg_vals: List[float] = []
-            for row in reader:
-                vmaf_val = _safe_float(row.get("vmaf"))
-                if vmaf_val is not None:
-                    vmaf_vals.append(vmaf_val)
-                vmaf_neg_val = _safe_float(row.get("vmaf_neg"))
-                if vmaf_neg_val is not None:
-                    vmaf_neg_vals.append(vmaf_neg_val)
-
-            return {
-                "vmaf_mean": _mean(vmaf_vals),
-                "vmaf_harmonic_mean": _harmonic_mean(vmaf_vals),
-                "vmaf_neg_mean": _mean(vmaf_neg_vals),
-            }
-
-        try:
-            text = json_path.read_text()
-            stripped = text.lstrip()
-            if stripped.startswith("{"):
-                data = json.loads(text)
-                pooled = data.get("pooled_metrics", {}).get("vmaf", {}) or {}
-                vmaf_neg_pooled = data.get("pooled_metrics", {}).get("vmaf_neg", {}) or {}
-                return {
-                    "vmaf_mean": float(pooled.get("mean", 0.0)),
-                    "vmaf_harmonic_mean": float(pooled.get("harmonic_mean", 0.0)),
-                    "vmaf_neg_mean": float(vmaf_neg_pooled.get("mean", 0.0)),
-                }
-
-            # CSV 日志
-            return _parse_csv(text)
-
-        except Exception as e:
-            raise RuntimeError(f"Failed to parse VMAF log: {str(e)}")
 
 
 # Helper function for subprocess with timeout

@@ -7,7 +7,6 @@ import asyncio
 import json
 import platform
 import re
-import shlex
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -16,227 +15,25 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import psutil
 import numpy as np
-import scipy.interpolate
 
 from src.models import CommandLog, CommandStatus
 from src.models_template import EncoderType, EncodingTemplate, TemplateSideConfig
 from src.services import job_storage
 from src.services.bitstream_analysis import build_bitstream_report
 from src.services.ffmpeg import ffmpeg_service
-
-
-def _now():
-    return datetime.now().astimezone()
-
-
-@dataclass
-class SourceInfo:
-    path: Path
-    is_yuv: bool
-    width: int
-    height: int
-    fps: float
-    pix_fmt: str = "yuv420p"
-
-
-def _list_sources(source_dir: Path) -> List[Path]:
-    return sorted([p for p in source_dir.iterdir() if p.is_file()])
-
-
-def _parse_yuv_name(path: Path) -> Tuple[int, int, float]:
-    stem = path.stem
-    import re
-
-    m = re.search(r"_([0-9]+)x([0-9]+)_([0-9]+(?:\.[0-9]+)?)$", stem)
-    if not m:
-        raise ValueError(f"YUV 文件名不符合格式: {path.name}")
-    return int(m.group(1)), int(m.group(2)), float(m.group(3))
-
-
-async def _probe_media(path: Path) -> Tuple[int, int, float]:
-    info = await ffmpeg_service.get_video_info(path)
-    w = info.get("width")
-    h = info.get("height")
-    fps = info.get("fps")
-    if not (w and h and fps):
-        raise ValueError(f"无法解析分辨率/FPS: {path}")
-    return int(w), int(h), float(fps)
-
-
-async def _collect_sources(source_dir: str) -> List[SourceInfo]:
-    base = Path(source_dir)
-    if not base.is_dir():
-        raise ValueError(f"源目录不存在: {source_dir}")
-    files = _list_sources(base)
-    if not files:
-        raise ValueError(f"源目录为空: {source_dir}")
-
-    results: List[SourceInfo] = []
-    for p in files:
-        if p.suffix.lower() == ".yuv":
-            w, h, fps = _parse_yuv_name(p)
-            results.append(SourceInfo(path=p, is_yuv=True, width=w, height=h, fps=fps))
-        else:
-            w, h, fps = await _probe_media(p)
-            results.append(SourceInfo(path=p, is_yuv=False, width=w, height=h, fps=fps))
-    return results
-
-
-def _encoder_extension(enc: EncoderType) -> str:
-    if enc == EncoderType.X264:
-        return ".h264"
-    if enc == EncoderType.X265:
-        return ".h265"
-    if enc == EncoderType.VVENC:
-        return ".h266"
-    return ".h264"
-
-
-def _is_container_file(path: Path) -> bool:
-    return path.suffix.lower() in {
-        ".mp4",
-        ".mov",
-        ".mkv",
-        ".avi",
-        ".flv",
-        ".ts",
-        ".webm",
-        ".mpg",
-        ".mpeg",
-        ".m4v",
-    }
-
-
-def _build_output_stem(src: Path, rate_control: str, val: float) -> str:
-    rc = (rate_control or "rc").lower()
-    val_str = str(val).rstrip("0").rstrip(".") if isinstance(val, float) else str(val)
-    return f"{src.stem}_{rc}_{val_str}"
-
-
-def _output_extension(enc: EncoderType, src: SourceInfo, is_container: bool) -> str:
-    if enc == EncoderType.FFMPEG:
-        if is_container:
-            return src.path.suffix or ".mp4"
-        suf = src.path.suffix.lower()
-        if suf in {".h265", ".265", ".hevc"}:
-            return ".h265"
-        if suf in {".h264", ".264"}:
-            return ".h264"
-        return _encoder_extension(enc)
-    return _encoder_extension(enc)
-
-
-def _strip_rc_tokens(enc: EncoderType, params: str) -> List[str]:
-    tokens = shlex.split(params) if params else []
-    cleaned: List[str] = []
-    skip_next = False
-    ffmpeg_flags = {"-crf", "-b:v"}
-    encoder_flags = {"--crf", "--bitrate"}
-    for tok in tokens:
-        if skip_next:
-            skip_next = False
-            continue
-        if enc == EncoderType.FFMPEG and tok in ffmpeg_flags:
-            skip_next = True
-            continue
-        if enc != EncoderType.FFMPEG and tok in encoder_flags:
-            skip_next = True
-            continue
-        cleaned.append(tok)
-    return cleaned
-
-
-def _start_command(job, command_type: str, command: List[str], source_file: Optional[str]) -> Optional[CommandLog]:
-    if not job:
-        return None
-    log = CommandLog(
-        command_id=f"{len(job.metadata.command_logs)+1}",
-        command_type=command_type,
-        command=" ".join(command),
-        status=CommandStatus.RUNNING,
-        source_file=str(source_file) if source_file else None,
-        started_at=_now(),
-    )
-    job.metadata.command_logs.append(log)
-    try:
-        job_storage.update_job(job)
-    except Exception:
-        pass
-    return log
-
-
-def _finish_command(job, log: Optional[CommandLog], status: CommandStatus, error: Optional[str] = None) -> None:
-    if not job or not log:
-        return
-    log.status = status
-    log.completed_at = _now()
-    if error:
-        log.error_message = error
-    try:
-        job_storage.update_job(job)
-    except Exception:
-        pass
-
-
-def _fingerprint(side: TemplateSideConfig) -> str:
-    payload = {
-        "skip_encode": side.skip_encode,
-        "source_dir": side.source_dir,
-        "encoder_type": side.encoder_type,
-        "encoder_params": side.encoder_params,
-        "rate_control": side.rate_control,
-        "bitrate_points": side.bitrate_points,
-        "bitstream_dir": side.bitstream_dir,
-    }
-    return json.dumps(payload, sort_keys=True)
-
-
-def _build_encode_cmd(
-    enc: EncoderType,
-    params: str,
-    rc: str,
-    val: float,
-    src: SourceInfo,
-    output: Path,
-) -> List[str]:
-    val_str = str(val)
-    if enc == EncoderType.FFMPEG:
-        cmd = [ffmpeg_service.ffmpeg_path, "-y"]
-        if src.is_yuv:
-            cmd += [
-                "-f",
-                "rawvideo",
-                "-pix_fmt",
-                src.pix_fmt,
-                "-s:v",
-                f"{src.width}x{src.height}",
-                "-r",
-                str(src.fps),
-            ]
-        cmd += ["-i", str(src.path)]
-        if not src.is_yuv and not _is_container_file(src.path):
-            cmd += ["-s:v", f"{src.width}x{src.height}", "-r", str(src.fps)]
-        cmd += _strip_rc_tokens(enc, params)
-        if rc.lower() == "crf":
-            cmd += ["-crf", val_str]
-        else:
-            cmd += ["-b:v", f"{val_str}k"]
-        cmd += [str(output)]
-        return cmd
-
-    base = [enc.value]
-    if src.is_yuv:
-        if enc in {EncoderType.X264, EncoderType.X265}:
-            base += ["--input-res", f"{src.width}x{src.height}", "--fps", str(src.fps)]
-        elif enc == EncoderType.VVENC:
-            base += ["--size", f"{src.width}x{src.height}", "--framerate", str(src.fps)]
-    base += _strip_rc_tokens(enc, params)
-    if rc.lower() == "crf":
-        base += ["--crf", val_str]
-    else:
-        base += ["--bitrate", val_str]
-    base += ["-o", str(output), str(src.path)]
-    return base
+from src.utils.bd_rate import bd_rate as _bd_rate, bd_metrics as _bd_metrics
+from src.utils.encoding import (
+    SourceInfo,
+    collect_sources as _collect_sources,
+    build_output_stem as _build_output_stem,
+    output_extension as _output_extension,
+    is_container_file as _is_container_file,
+    build_encode_cmd as _build_encode_cmd,
+    start_command as _start_command,
+    finish_command as _finish_command,
+    now as _now,
+)
+from src.utils.template_helpers import fingerprint as _fingerprint
 
 
 @dataclass
@@ -407,70 +204,6 @@ async def _run_encode_with_perf(
     return proc.returncode or 0, stdout, stderr, perf
 
 
-def _bd_metrics(rate1: List[float], metric1: List[float], rate2: List[float], metric2: List[float], piecewise: int = 0) -> Optional[float]:
-    if len(rate1) < 4 or len(rate2) < 4:
-        return None
-    lR1 = np.log(rate1)
-    lR2 = np.log(rate2)
-    m1 = np.array(metric1)
-    m2 = np.array(metric2)
-    try:
-        p1 = np.polyfit(lR1, m1, 3)
-        p2 = np.polyfit(lR2, m2, 3)
-    except Exception:
-        return None
-    min_int = max(min(lR1), min(lR2))
-    max_int = min(max(lR1), max(lR2))
-    if max_int <= min_int:
-        return None
-    if piecewise == 0:
-        p_int1 = np.polyint(p1)
-        p_int2 = np.polyint(p2)
-        int1 = np.polyval(p_int1, max_int) - np.polyval(p_int1, min_int)
-        int2 = np.polyval(p_int2, max_int) - np.polyval(p_int2, min_int)
-    else:
-        lin = np.linspace(min_int, max_int, num=100, retstep=True)
-        interval = lin[1]
-        samples = lin[0]
-        v1 = scipy.interpolate.pchip_interpolate(np.sort(lR1), m1[np.argsort(lR1)], samples)
-        v2 = scipy.interpolate.pchip_interpolate(np.sort(lR2), m2[np.argsort(lR2)], samples)
-        int1 = np.trapz(v1, dx=interval)
-        int2 = np.trapz(v2, dx=interval)
-    avg_diff = (int2 - int1) / (max_int - min_int)
-    return avg_diff
-
-
-def _bd_rate(rate1: List[float], metric1: List[float], rate2: List[float], metric2: List[float], piecewise: int = 0) -> Optional[float]:
-    if len(rate1) < 4 or len(rate2) < 4:
-        return None
-    lR1 = np.log(rate1)
-    lR2 = np.log(rate2)
-    try:
-        p1 = np.polyfit(metric1, lR1, 3)
-        p2 = np.polyfit(metric2, lR2, 3)
-    except Exception:
-        return None
-    min_int = max(min(metric1), min(metric2))
-    max_int = min(max(metric1), max(metric2))
-    if max_int <= min_int:
-        return None
-    if piecewise == 0:
-        p_int1 = np.polyint(p1)
-        p_int2 = np.polyint(p2)
-        int1 = np.polyval(p_int1, max_int) - np.polyval(p_int1, min_int)
-        int2 = np.polyval(p_int2, max_int) - np.polyval(p_int2, min_int)
-    else:
-        lin = np.linspace(min_int, max_int, num=100, retstep=True)
-        interval = lin[1]
-        samples = lin[0]
-        v1 = scipy.interpolate.pchip_interpolate(np.sort(metric1), lR1[np.argsort(metric1)], samples)
-        v2 = scipy.interpolate.pchip_interpolate(np.sort(metric2), lR2[np.argsort(metric2)], samples)
-        int1 = np.trapz(v1, dx=interval)
-        int2 = np.trapz(v2, dx=interval)
-    avg_exp_diff = (int2 - int1) / (max_int - min_int)
-    return (np.exp(avg_exp_diff) - 1) * 100
-
-
 def _get_cpu_brand() -> str:
     """跨平台获取 CPU 品牌/型号名称"""
     import subprocess
@@ -590,15 +323,15 @@ async def _encode_side(
                 continue
 
             cmd = _build_encode_cmd(side.encoder_type, side.encoder_params or "", side.rate_control.value, val, src, out_path)
-            log = _start_command(job, "encode", cmd, src.path)
+            log = _start_command(job, "encode", cmd, src.path, job_storage)
 
             # 使用带性能采集的编码函数
             returncode, _, stderr, perf = await _run_encode_with_perf(cmd, side.encoder_type)
 
             if returncode != 0:
-                _finish_command(job, log, CommandStatus.FAILED, error=stderr.decode(errors="ignore"))
+                _finish_command(job, log, CommandStatus.FAILED, job_storage, error=stderr.decode(errors="ignore"))
                 raise RuntimeError(f"编码失败 {out_path.name}: {stderr.decode(errors='ignore')}")
-            _finish_command(job, log, CommandStatus.COMPLETED)
+            _finish_command(job, log, CommandStatus.COMPLETED, job_storage)
             file_outputs.append(out_path)
             file_perfs.append(perf)
         outputs[src.path.stem] = file_outputs

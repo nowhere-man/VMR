@@ -137,9 +137,6 @@
     </div>
   </div>
 </div>
-
-<!-- Toast 提示 -->
-<div id="toast" class="hidden fixed top-4 right-4 max-w-xs bg-gray-900 text-white text-sm rounded-lg shadow-lg px-4 py-3 z-50"></div>
 {% endblock %}
 
 {% block scripts %}
@@ -157,22 +154,6 @@ const cancelBtn = document.getElementById('cancelTemplateSelection');
 const confirmBtn = document.getElementById('confirmTemplateSelection');
 let templatesCache = [];
 let templateMode = "compare"; // compare | analyze
-
-function showToast(message, tone = 'info') {
-  const toast = document.getElementById('toast');
-  if (!toast) return;
-  toast.textContent = message;
-  const base = 'fixed top-4 right-4 max-w-xs text-sm rounded-lg shadow-lg px-4 py-3 z-50';
-  const toneClass =
-    tone === 'error'
-      ? 'bg-red-600 text-white'
-      : tone === 'success'
-      ? 'bg-green-600 text-white'
-      : 'bg-gray-900 text-white';
-  toast.className = `${base} ${toneClass}`;
-  toast.classList.remove('hidden');
-  setTimeout(() => toast.classList.add('hidden'), 2000);
-}
 
 function toggleTemplateModal(open) {
   if (open) {
@@ -198,12 +179,6 @@ function resetTemplateModal() {
   templateInfo.classList.add('hidden');
   document.getElementById('createTemplateBtn').setAttribute('href', templateMode === 'analyze' ? '/templates/new?type=metrics' : '/templates/new');
   setModalState('loading');
-}
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 function updateTemplateInfo() {

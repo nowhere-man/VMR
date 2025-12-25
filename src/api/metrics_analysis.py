@@ -20,6 +20,7 @@ from src.services.metrics_analysis_runner import metrics_analysis_runner
 from src.services.storage import job_storage
 from src.services.template_storage import template_storage
 from src.models_template import TemplateSideConfig
+from src.utils.path_helpers import dir_exists, dir_writable
 
 router = APIRouter(prefix="/api/metrics-analysis", tags=["metrics-analysis"])
 
@@ -125,23 +126,9 @@ async def validate_metrics_template(template_id: str) -> ValidateMetricsTemplate
     if not template or template.metadata.template_type != TemplateType.METRICS_ANALYSIS:
         raise HTTPException(status_code=404, detail=f"Template {template_id} not found")
 
-    def _dir_exists(p: str) -> bool:
-        return Path(p).is_dir()
-
-    def _writable(p: str) -> bool:
-        path = Path(p)
-        try:
-            path.mkdir(parents=True, exist_ok=True)
-            test = path / ".writetest"
-            test.write_text("ok")
-            test.unlink()
-            return True
-        except Exception:
-            return False
-
     c = template.metadata.baseline
-    source_ok = _dir_exists(c.source_dir)
-    output_ok = _writable(c.bitstream_dir)
+    source_ok = dir_exists(c.source_dir)
+    output_ok = dir_writable(c.bitstream_dir)
 
     return ValidateMetricsTemplateResponse(
         template_id=template_id,

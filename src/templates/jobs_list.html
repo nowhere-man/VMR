@@ -107,106 +107,13 @@
     </div>
 </div>
 
-<div id="toast" class="hidden fixed bottom-4 right-4 max-w-xs bg-gray-900 text-white text-sm rounded-lg shadow-lg px-4 py-3 z-50"></div>
-
 <script>
-let deletePopover = null;
-let outsideHandler = null;
-
-function removePopover() {
-  if (deletePopover) {
-    deletePopover.remove();
-    deletePopover = null;
-  }
-  if (outsideHandler) {
-    document.removeEventListener('click', outsideHandler, true);
-    outsideHandler = null;
-  }
-}
-
-function showToast(message, tone = 'info') {
-  const toast = document.getElementById('toast');
-  if (!toast) return;
-  toast.textContent = message;
-  const base = 'fixed bottom-4 right-4 max-w-xs text-sm rounded-lg shadow-lg px-4 py-3 z-50';
-  const toneClass =
-    tone === 'error'
-      ? 'bg-red-600 text-white'
-      : tone === 'success'
-      ? 'bg-green-600 text-white'
-      : 'bg-gray-900 text-white';
-  toast.className = `${base} ${toneClass}`;
-  toast.classList.remove('hidden');
-  setTimeout(() => toast.classList.add('hidden'), 2200);
-}
-
 function confirmDelete(event, jobId) {
-  event.preventDefault();
-  event.stopPropagation();
-  removePopover();
-
-  const btn = event.currentTarget;
-  const rect = btn.getBoundingClientRect();
-  const pop = document.createElement('div');
-  pop.className =
-    'fixed bg-white border border-gray-200 rounded-lg shadow-xl p-3 text-sm w-56 z-40';
-  pop.innerHTML = `
-    <div class="text-gray-900 font-semibold mb-2">确认删除该任务？</div>
-    <p class="text-xs text-gray-600 mb-3">此操作会清理任务文件，且无法撤销。</p>
-    <div class="flex items-center justify-end gap-2 text-xs">
-      <button class="px-3 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100" data-action="cancel">取消</button>
-      <button class="px-3 py-1 rounded-md bg-red-600 text-white hover:bg-red-700" data-action="confirm">删除</button>
-    </div>
-  `;
-
-  // 计算弹窗位置，确保在可视区域内
-  const popWidth = 224; // w-56 = 14rem = 224px
-  const popHeight = 120; // 估算高度
-  const margin = 8;
-
-  let top = rect.bottom + margin;
-  let left = rect.left - popWidth + rect.width;
-
-  // 检查右边界
-  if (left + popWidth > window.innerWidth - margin) {
-    left = window.innerWidth - popWidth - margin;
-  }
-  // 检查左边界
-  if (left < margin) {
-    left = margin;
-  }
-  // 检查下边界，如果超出则显示在按钮上方
-  if (top + popHeight > window.innerHeight - margin) {
-    top = rect.top - popHeight - margin;
-  }
-  // 检查上边界
-  if (top < margin) {
-    top = margin;
-  }
-
-  pop.style.top = `${top}px`;
-  pop.style.left = `${left}px`;
-
-  pop.addEventListener('click', async (e) => {
-    const action = e.target?.dataset?.action;
-    if (action === 'cancel') {
-      removePopover();
-    }
-    if (action === 'confirm') {
-      removePopover();
-      await deleteJob(jobId);
-    }
+  showDeleteConfirm(event, {
+    title: '确认删除该任务？',
+    message: '此操作会清理任务文件，且无法撤销。',
+    onConfirm: () => deleteJob(jobId)
   });
-
-  outsideHandler = (e) => {
-    if (deletePopover && !deletePopover.contains(e.target)) {
-      removePopover();
-    }
-  };
-  document.addEventListener('click', outsideHandler, true);
-
-  document.body.appendChild(pop);
-  deletePopover = pop;
 }
 
 async function deleteJob(jobId) {

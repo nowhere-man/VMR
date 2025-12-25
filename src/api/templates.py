@@ -23,22 +23,10 @@ from src.services.template_runner import template_runner
 from src.services.storage import job_storage
 from src.services.template_storage import template_storage
 from src.models_template import TemplateSideConfig
+from src.utils.template_helpers import fingerprint as _fingerprint
+from src.utils.path_helpers import dir_exists, dir_writable
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
-
-
-def _fingerprint(side) -> str:
-    import json
-    payload = {
-        "skip_encode": side.skip_encode,
-        "source_dir": side.source_dir,
-        "encoder_type": side.encoder_type,
-        "encoder_params": side.encoder_params,
-        "rate_control": side.rate_control,
-        "bitrate_points": side.bitrate_points,
-        "bitstream_dir": side.bitstream_dir,
-    }
-    return json.dumps(payload, sort_keys=True)
 
 
 @router.post(
@@ -222,24 +210,10 @@ async def validate_template(template_id: str) -> ValidateTemplateResponse:
     if not template:
         raise HTTPException(status_code=404, detail=f"Template {template_id} not found")
 
-    def _dir_exists(p: str) -> bool:
-        return Path(p).is_dir()
-
-    def _writable(p: str) -> bool:
-        path = Path(p)
-        try:
-            path.mkdir(parents=True, exist_ok=True)
-            test = path / ".writetest"
-            test.write_text("ok")
-            test.unlink()
-            return True
-        except Exception:
-            return False
-
     b = template.metadata.baseline
     e = template.metadata.experimental
-    source_ok = _dir_exists(b.source_dir) and _dir_exists(e.source_dir)
-    output_ok = _writable(b.bitstream_dir) and _writable(e.bitstream_dir)
+    source_ok = dir_exists(b.source_dir) and dir_exists(e.source_dir)
+    output_ok = dir_writable(b.bitstream_dir) and dir_writable(e.bitstream_dir)
 
     return ValidateTemplateResponse(
         template_id=template_id,

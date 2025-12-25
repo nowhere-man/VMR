@@ -3,7 +3,6 @@ Metrics 分析模板执行器（单侧）
 """
 import json
 import platform
-import shlex
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -16,223 +15,17 @@ from src.models_template import EncoderType, EncodingTemplate, TemplateSideConfi
 from src.services.storage import job_storage
 from src.services.bitstream_analysis import build_bitstream_report
 from src.services.ffmpeg import ffmpeg_service
-
-
-def _now():
-    return datetime.now().astimezone()
-
-
-@dataclass
-class SourceInfo:
-    path: Path
-    is_yuv: bool
-    width: int
-    height: int
-    fps: float
-    pix_fmt: str = "yuv420p"
-
-
-def _list_sources(source_dir: Path) -> List[Path]:
-    return sorted([p for p in source_dir.iterdir() if p.is_file()])
-
-
-def _parse_yuv_name(path: Path) -> Tuple[int, int, float]:
-    stem = path.stem
-    import re
-
-    m = re.search(r"_([0-9]+)x([0-9]+)_([0-9]+(?:\.[0-9]+)?)$", stem)
-    if not m:
-        raise ValueError(f"YUV 文件名不符合格式: {path.name}")
-    return int(m.group(1)), int(m.group(2)), float(m.group(3))
-
-
-async def _probe_media(path: Path) -> Tuple[int, int, float]:
-    info = await ffmpeg_service.get_video_info(path)
-    w = info.get("width")
-    h = info.get("height")
-    fps = info.get("fps")
-    if not (w and h and fps):
-        raise ValueError(f"无法解析分辨率/FPS: {path}")
-    return int(w), int(h), float(fps)
-
-
-async def _collect_sources(source_dir: str) -> List[SourceInfo]:
-    base = Path(source_dir)
-    if not base.is_dir():
-        raise ValueError(f"源目录不存在: {source_dir}")
-    files = _list_sources(base)
-    if not files:
-        raise ValueError(f"源目录为空: {source_dir}")
-
-    results: List[SourceInfo] = []
-    for p in files:
-        if p.suffix.lower() == ".yuv":
-            w, h, fps = _parse_yuv_name(p)
-            results.append(SourceInfo(path=p, is_yuv=True, width=w, height=h, fps=fps))
-        else:
-            w, h, fps = await _probe_media(p)
-            results.append(SourceInfo(path=p, is_yuv=False, width=w, height=h, fps=fps))
-    return results
-
-
-def _encoder_extension(enc: EncoderType) -> str:
-    if enc == EncoderType.X264:
-        return ".h264"
-    if enc == EncoderType.X265:
-        return ".h265"
-    if enc == EncoderType.VVENC:
-        return ".h266"
-    return ".h264"
-
-
-def _is_container_file(path: Path) -> bool:
-    return path.suffix.lower() in {
-        ".mp4",
-        ".mov",
-        ".mkv",
-        ".avi",
-        ".flv",
-        ".ts",
-        ".webm",
-        ".mpg",
-        ".mpeg",
-        ".m4v",
-    }
-
-
-def _build_output_stem(src: Path, rate_control: str, val: float) -> str:
-    rc = (rate_control or "rc").lower()
-    val_str = str(val).rstrip("0").rstrip(".") if isinstance(val, float) else str(val)
-    return f"{src.stem}_{rc}_{val_str}"
-
-
-def _output_extension(enc: EncoderType, src: SourceInfo, is_container: bool) -> str:
-    if enc == EncoderType.FFMPEG:
-        if is_container:
-            return src.path.suffix or ".mp4"
-        # 原始码流/裸流：沿用源后缀（h264/h265等），否则回退默认
-        suf = src.path.suffix.lower()
-        if suf in {".h265", ".265", ".hevc"}:
-            return ".h265"
-        if suf in {".h264", ".264"}:
-            return ".h264"
-        return _encoder_extension(enc)
-    return _encoder_extension(enc)
-
-
-def _strip_rc_tokens(enc: EncoderType, params: str) -> List[str]:
-    tokens = shlex.split(params) if params else []
-    cleaned: List[str] = []
-    skip_next = False
-    ffmpeg_flags = {"-crf", "-b:v"}
-    encoder_flags = {"--crf", "--bitrate"}
-    for tok in tokens:
-        if skip_next:
-            skip_next = False
-            continue
-        if enc == EncoderType.FFMPEG and tok in ffmpeg_flags:
-            skip_next = True
-            continue
-        if enc != EncoderType.FFMPEG and tok in encoder_flags:
-            skip_next = True
-            continue
-        cleaned.append(tok)
-    return cleaned
-
-
-def _build_encode_cmd(
-    enc: EncoderType,
-    params: str,
-    rc: str,
-    val: float,
-    src: SourceInfo,
-    output: Path,
-) -> List[str]:
-    val_str = str(val)
-    if enc == EncoderType.FFMPEG:
-        cmd = [ffmpeg_service.ffmpeg_path, "-y"]
-        if src.is_yuv:
-            cmd += [
-                "-f",
-                "rawvideo",
-                "-pix_fmt",
-                src.pix_fmt,
-                "-s:v",
-                f"{src.width}x{src.height}",
-                "-r",
-                str(src.fps),
-                "-i",
-                str(src.path),
-            ]
-        else:
-            cmd += ["-i", str(src.path)]
-            if not _is_container_file(src.path):
-                cmd += ["-s:v", f"{src.width}x{src.height}", "-r", str(src.fps)]
-        cmd += _strip_rc_tokens(enc, params)
-        if rc.lower() == "crf":
-            cmd += ["-crf", val_str]
-        else:
-            cmd += ["-b:v", f"{val_str}k"]
-        cmd += [str(output)]
-        return cmd
-
-    cmd = [ffmpeg_service.ffmpeg_path, "-y"]
-    if src.is_yuv:
-        cmd += [
-            "-f",
-            "rawvideo",
-            "-pix_fmt",
-            src.pix_fmt,
-            "-s:v",
-            f"{src.width}x{src.height}",
-            "-r",
-            str(src.fps),
-            "-i",
-            str(src.path),
-        ]
-    else:
-        cmd += ["-i", str(src.path)]
-
-    cmd += ["-c:v", enc.value]
-    cmd += _strip_rc_tokens(enc, params)
-    if rc.lower() == "crf":
-        cmd += ["--crf", val_str]
-    else:
-        cmd += ["--bitrate", val_str]
-    cmd += [str(output)]
-    return cmd
-
-
-def _start_command(job, command_type: str, command: List[str], source_file: Optional[str]) -> Optional[CommandLog]:
-    if not job:
-        return None
-    log = CommandLog(
-        command_id=f"{len(job.metadata.command_logs)+1}",
-        command_type=command_type,
-        command=" ".join(command),
-        status=CommandStatus.RUNNING,
-        source_file=str(source_file) if source_file else None,
-        started_at=_now(),
-    )
-    job.metadata.command_logs.append(log)
-    try:
-        job_storage.update_job(job)
-    except Exception:
-        pass
-    return log
-
-
-def _finish_command(job, log: Optional[CommandLog], status: CommandStatus, error: Optional[str] = None) -> None:
-    if not job or not log:
-        return
-    log.status = status
-    log.completed_at = _now()
-    if error:
-        log.error_message = error
-    try:
-        job_storage.update_job(job)
-    except Exception:
-        pass
+from src.utils.encoding import (
+    SourceInfo,
+    collect_sources as _collect_sources,
+    build_output_stem as _build_output_stem,
+    output_extension as _output_extension,
+    is_container_file as _is_container_file,
+    build_encode_cmd as _build_encode_cmd,
+    start_command as _start_command,
+    finish_command as _finish_command,
+    now as _now,
+)
 
 
 def _env_info() -> Dict[str, str]:
@@ -279,12 +72,12 @@ async def _encode(config: TemplateSideConfig, sources: List[SourceInfo], job=Non
                 src=src,
                 output=output_path,
             )
-            log = _start_command(job, "encode", cmd, source_file=str(src.path))
+            log = _start_command(job, "encode", cmd, source_file=str(src.path), storage=job_storage)
             try:
                 await ffmpeg_service.run_command(cmd)
-                _finish_command(job, log, CommandStatus.COMPLETED)
+                _finish_command(job, log, CommandStatus.COMPLETED, storage=job_storage)
             except Exception as exc:
-                _finish_command(job, log, CommandStatus.FAILED, str(exc))
+                _finish_command(job, log, CommandStatus.FAILED, storage=job_storage, error=str(exc))
                 raise
             file_outputs.append(output_path)
         outputs[src.path.stem] = file_outputs
@@ -324,8 +117,9 @@ class MetricsAnalysisRunner:
 
         # 准备命令日志回调
         def _add_cmd(command_type: str, command: str, source_file: str = None):
+            import shlex
             cmd = shlex.split(command)
-            log = _start_command(job, command_type, cmd, source_file=source_file)
+            log = _start_command(job, command_type, cmd, source_file=source_file, storage=job_storage)
             return log.command_id if log else None
 
         def _update_cmd(command_id: str, status: str, error: str = None):

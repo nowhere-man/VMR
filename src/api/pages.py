@@ -34,21 +34,25 @@ def _fmt_time(dt: Optional[datetime]) -> Optional[str]:
         return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _not_found_response(request: Request, resource_type: str, resource_id: str) -> HTMLResponse:
+    """返回 404 页面响应"""
+    return templates.TemplateResponse(
+        "base.html",
+        {
+            "request": request,
+            "error": f"{resource_type} {resource_id} not found",
+        },
+        status_code=404,
+    )
+
+
 @router.get("/jobs/{job_id}", response_class=HTMLResponse)
 async def job_report_page(request: Request, job_id: str) -> HTMLResponse:
     """任务报告页面"""
     job = job_storage.get_job(job_id)
 
     if not job:
-        # 返回 404 页面
-        return templates.TemplateResponse(
-            "base.html",
-            {
-                "request": request,
-                "error": f"Job {job_id} not found",
-            },
-            status_code=404,
-        )
+        return _not_found_response(request, "Job", job_id)
 
     metadata = job.metadata
 
@@ -155,14 +159,7 @@ async def template_detail_page(request: Request, template_id: str) -> HTMLRespon
     template = template_storage.get_template(template_id)
 
     if not template:
-        return templates.TemplateResponse(
-            "base.html",
-            {
-                "request": request,
-                "error": f"Template {template_id} not found",
-            },
-            status_code=404,
-        )
+        return _not_found_response(request, "Template", template_id)
 
     return templates.TemplateResponse(
         "template_form.html", {"request": request, "template_id": template_id, "readonly": True}
@@ -175,14 +172,7 @@ async def edit_template_page(request: Request, template_id: str) -> HTMLResponse
     template = template_storage.get_template(template_id)
 
     if not template:
-        return templates.TemplateResponse(
-            "base.html",
-            {
-                "request": request,
-                "error": f"Template {template_id} not found",
-            },
-            status_code=404,
-        )
+        return _not_found_response(request, "Template", template_id)
 
     return templates.TemplateResponse(
         "template_form.html", {"request": request, "template_id": template_id, "readonly": False}
@@ -195,14 +185,7 @@ async def template_view_page(request: Request, template_id: str) -> HTMLResponse
     template = template_storage.get_template(template_id)
 
     if not template:
-        return templates.TemplateResponse(
-            "base.html",
-            {
-                "request": request,
-                "error": f"Template {template_id} not found",
-            },
-            status_code=404,
-        )
+        return _not_found_response(request, "Template", template_id)
 
     return templates.TemplateResponse(
         "template_view.html",

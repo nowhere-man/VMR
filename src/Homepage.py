@@ -13,7 +13,7 @@ project_root = Path(__file__).resolve().parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.config import settings
+from src.utils.streamlit_helpers import list_jobs
 
 
 # 页面配置
@@ -27,55 +27,12 @@ st.set_page_config(
 
 def _list_bitstream_jobs(limit: int = 20) -> List[Dict]:
     """列出最近的码流分析报告 job_id 列表（按 report_data.json 修改时间倒序）。"""
-    root = settings.jobs_root_dir
-    if not root.is_absolute():
-        root = (project_root / root).resolve()
-    if not root.exists():
-        return []
-
-    items: List[Dict] = []
-    for job_dir in root.iterdir():
-        if not job_dir.is_dir():
-            continue
-        report_path = job_dir / "bitstream_analysis" / "report_data.json"
-        if report_path.exists():
-            mtime = report_path.stat().st_mtime
-            items.append(
-                {
-                    "job_id": job_dir.name,
-                    "mtime": mtime,
-                    "report_path": report_path,
-                }
-            )
-
-    items.sort(key=lambda x: x["mtime"], reverse=True)
-    return items[:limit]
+    return list_jobs("bitstream_analysis/report_data.json", limit=limit)
 
 
 def _list_template_jobs(limit: int = 20) -> List[Dict]:
     """列出最近的模板指标报告 job_id 列表。"""
-    root = settings.jobs_root_dir
-    if not root.is_absolute():
-        root = (project_root / root).resolve()
-    if not root.exists():
-        return []
-
-    items: List[Dict] = []
-    for job_dir in root.iterdir():
-        if not job_dir.is_dir():
-            continue
-        report_path = job_dir / "metrics_analysis" / "report_data.json"
-        if report_path.exists():
-            mtime = report_path.stat().st_mtime
-            items.append(
-                {
-                    "job_id": job_dir.name,
-                    "mtime": mtime,
-                    "report_path": report_path,
-                }
-            )
-    items.sort(key=lambda x: x["mtime"], reverse=True)
-    return items[:limit]
+    return list_jobs("metrics_analysis/report_data.json", limit=limit)
 
 
 def _set_job_query_param(job_id: str) -> None:

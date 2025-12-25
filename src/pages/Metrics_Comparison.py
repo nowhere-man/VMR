@@ -19,68 +19,26 @@ import streamlit as st
 project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
 
-from src.config import settings
-
-
-def _jobs_root_dir() -> Path:
-    root = settings.jobs_root_dir
-    if root.is_absolute():
-        return root
-    return (project_root / root).resolve()
+from src.utils.streamlit_helpers import (
+    jobs_root_dir as _jobs_root_dir,
+    list_jobs,
+    get_query_param,
+    load_json_report,
+    parse_rate_point as _parse_point,
+    create_cpu_chart,
+)
 
 
 def _list_template_jobs(limit: int = 50) -> List[Dict[str, Any]]:
-    root = _jobs_root_dir()
-    if not root.exists():
-        return []
-    items: List[Dict[str, Any]] = []
-    for job_dir in root.iterdir():
-        if not job_dir.is_dir():
-            continue
-        report_path = job_dir / "metrics_analysis" / "report_data.json"
-        if report_path.exists():
-            items.append(
-                {
-                    "job_id": job_dir.name,
-                    "mtime": report_path.stat().st_mtime,
-                    "report_path": report_path,
-                }
-            )
-    items.sort(key=lambda x: x["mtime"], reverse=True)
-    return items[:limit]
+    return list_jobs("metrics_analysis/report_data.json", limit=limit)
 
 
 def _get_job_id() -> Optional[str]:
-    job_id = st.query_params.get("template_job_id")
-    if job_id:
-        if isinstance(job_id, list):
-            job_id = job_id[0] if job_id else None
-        return str(job_id) if job_id else None
-    return None
+    return get_query_param("template_job_id")
 
 
 def _load_report(job_id: str) -> Dict[str, Any]:
-    report_path = _jobs_root_dir() / job_id / "metrics_analysis" / "report_data.json"
-    if not report_path.exists():
-        raise FileNotFoundError(f"未找到报告数据文件: {report_path}")
-    with open(report_path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _parse_point(label: str) -> Tuple[Optional[str], Optional[float]]:
-    if not label:
-        return None, None
-    # 去掉文件扩展名
-    label_no_ext = label.rsplit(".", 1)[0] if "." in label else label
-    parts = label_no_ext.rsplit("_", 2)
-    if len(parts) < 3:
-        return None, None
-    rc = parts[-2]
-    try:
-        val = float(parts[-1])
-    except Exception:
-        return rc, None
-    return rc, val
+    return load_json_report(job_id, "metrics_analysis/report_data.json")
 
 
 st.set_page_config(page_title="Metrics对比", page_icon="📊", layout="wide")
@@ -664,79 +622,14 @@ if perf_rows:
             else:
                 exp_samples = row.get("cpu_samples", []) or []
 
-    def _aggregate_samples(samples: List[float], interval_ms: int) -> Tuple[List[float], List[float]]:
-        """聚合CPU采样数据"""
-        if not samples:
-            return [], []
-        # 原始采样间隔为100ms
-        step = interval_ms // 100
-        if step <= 1:
-            # 不聚合
-            x = [i * 0.1 for i in range(len(samples))]
-            return x, samples
-        # 聚合
-        agg_samples = []
-        for i in range(0, len(samples), step):
-            chunk = samples[i:i+step]
-            if chunk:
-                agg_samples.append(sum(chunk) / len(chunk))
-        x = [i * (interval_ms / 1000) for i in range(len(agg_samples))]
-        return x, agg_samples
-
     if base_samples or exp_samples:
-        base_x, base_y = _aggregate_samples(base_samples, agg_interval)
-        exp_x, exp_y = _aggregate_samples(exp_samples, agg_interval)
-
-        fig_cpu = go.Figure()
-
-        # Baseline 折线
-        if base_y:
-            fig_cpu.add_trace(go.Scatter(
-                x=base_x, y=base_y,
-                mode="lines",
-                name="Baseline",
-                line=dict(color="#2563eb", width=2),
-            ))
-            # 标记最大值
-            if base_y:
-                max_idx = base_y.index(max(base_y))
-                fig_cpu.add_trace(go.Scatter(
-                    x=[base_x[max_idx]], y=[base_y[max_idx]],
-                    mode="markers+text",
-                    name="Baseline Max",
-                    marker=dict(color="#2563eb", size=12, symbol="star"),
-                    text=[f"Max: {base_y[max_idx]:.1f}%"],
-                    textposition="top center",
-                    showlegend=False,
-                ))
-
-        # Experimental 折线
-        if exp_y:
-            fig_cpu.add_trace(go.Scatter(
-                x=exp_x, y=exp_y,
-                mode="lines",
-                name="Experimental",
-                line=dict(color="#dc2626", width=2),
-            ))
-            # 标记最大值
-            if exp_y:
-                max_idx = exp_y.index(max(exp_y))
-                fig_cpu.add_trace(go.Scatter(
-                    x=[exp_x[max_idx]], y=[exp_y[max_idx]],
-                    mode="markers+text",
-                    name="Exp Max",
-                    marker=dict(color="#dc2626", size=12, symbol="star"),
-                    text=[f"Max: {exp_y[max_idx]:.1f}%"],
-                    textposition="top center",
-                    showlegend=False,
-                ))
-
-        fig_cpu.update_layout(
+        fig_cpu = create_cpu_chart(
+            base_samples=base_samples,
+            exp_samples=exp_samples,
+            agg_interval=agg_interval,
             title=f"CPU占用率 - {selected_video_perf} ({selected_point_perf})",
-            xaxis_title="Time (s)",
-            yaxis_title="CPU (%)",
-            hovermode="x unified",
-            legend=dict(orientation="h", y=-0.15),
+            base_label="Baseline",
+            exp_label="Experimental",
         )
         st.plotly_chart(fig_cpu, use_container_width=True)
     else:
