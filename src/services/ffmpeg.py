@@ -7,10 +7,77 @@ import asyncio
 import json
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from src.config import settings
 from src.utils.metrics import parse_psnr_summary, parse_ssim_summary, parse_vmaf_summary
+
+
+async def _wait_for_process(process, timeout: int) -> Tuple[bytes, bytes]:
+    """等待进程完成，带超时"""
+    return await asyncio.wait_for(process.communicate(), timeout=timeout)
+
+
+async def _run_metric_cmd(
+    cmd: List[str],
+    metric_name: str,
+    parse_func: Callable,
+    output_path: Path,
+    add_command_callback,
+    update_status_callback,
+    command_type: str,
+    source_file: str,
+) -> Dict[str, Any]:
+    """
+    执行指标计算命令的公共逻辑
+
+    Args:
+        cmd: 完整的命令列表
+        metric_name: 指标名称（用于错误消息）
+        parse_func: 解析结果的函数
+        output_path: 输出文件路径
+        add_command_callback: 添加命令回调
+        update_status_callback: 更新状态回调
+        command_type: 命令类型
+        source_file: 源文件路径
+
+    Returns:
+        解析后的指标结果
+    """
+    cmd_id = None
+    if add_command_callback:
+        cmd_id = add_command_callback(command_type, " ".join(cmd), source_file)
+    if update_status_callback and cmd_id:
+        update_status_callback(cmd_id, "running")
+
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        stdout, stderr = await _wait_for_process(process, settings.ffmpeg_timeout)
+
+        if process.returncode != 0:
+            if update_status_callback and cmd_id:
+                update_status_callback(cmd_id, "failed", stderr.decode())
+            raise RuntimeError(f"{metric_name} calculation failed: {stderr.decode()}")
+
+        result = parse_func(output_path)
+        if update_status_callback and cmd_id:
+            update_status_callback(cmd_id, "completed")
+        return result
+
+    except asyncio.TimeoutError:
+        process.kill()
+        if update_status_callback and cmd_id:
+            update_status_callback(cmd_id, "failed", f"{metric_name} calculation timed out")
+        raise RuntimeError(f"{metric_name} calculation timed out")
+    except Exception as e:
+        if update_status_callback and cmd_id:
+            update_status_callback(cmd_id, "failed", str(e))
+        raise RuntimeError(f"Failed to calculate {metric_name}: {str(e)}")
 
 
 class FFmpegService:
@@ -26,6 +93,60 @@ class FFmpegService:
         """
         self.ffmpeg_path = ffmpeg_path
         self.ffprobe_path = ffprobe_path
+
+    def _build_metric_cmd(
+        self,
+        reference_path: Path,
+        distorted_path: Path,
+        filter_expr: str,
+        ref_width: int = None,
+        ref_height: int = None,
+        ref_fps: float = None,
+        ref_pix_fmt: str = "yuv420p",
+    ) -> List[str]:
+        """
+        构建指标计算命令的公共部分
+
+        Args:
+            reference_path: 参考视频路径
+            distorted_path: 待测视频路径
+            filter_expr: 滤镜表达式（如 "psnr=stats_file=xxx"）
+            ref_width: 参考视频宽度（YUV格式必需）
+            ref_height: 参考视频高度（YUV格式必需）
+            ref_fps: 参考视频帧率（YUV格式必需）
+            ref_pix_fmt: 参考视频像素格式
+
+        Returns:
+            命令列表
+        """
+        cmd = [self.ffmpeg_path]
+
+        # 添加distorted视频输入
+        cmd.extend(["-i", str(distorted_path)])
+
+        # 如果是YUV格式，需要为reference视频指定参数
+        if ref_width and ref_height:
+            cmd.extend([
+                "-f", "rawvideo",
+                "-pix_fmt", ref_pix_fmt,
+                "-s", f"{ref_width}x{ref_height}",
+            ])
+            if ref_fps:
+                cmd.extend(["-r", str(ref_fps)])
+
+        # 添加reference视频输入
+        cmd.extend(["-i", str(reference_path)])
+
+        # 添加滤镜和输出
+        cmd.extend([
+            "-lavfi",
+            filter_expr,
+            "-f",
+            "null",
+            "-",
+        ])
+
+        return cmd
 
     async def get_video_info(
         self, video_path: Path, input_format: Optional[str] = None
@@ -280,67 +401,16 @@ class FFmpegService:
         Returns:
             包含 psnr_avg, psnr_y, psnr_u, psnr_v 的字典
         """
-        cmd = [self.ffmpeg_path]
-
-        # 添加distorted视频输入
-        cmd.extend(["-i", str(distorted_path)])
-
-        # 如果是YUV格式，需要为reference视频指定参数
-        if ref_width and ref_height:
-            cmd.extend([
-                "-f", "rawvideo",
-                "-pix_fmt", ref_pix_fmt,
-                "-s", f"{ref_width}x{ref_height}",
-            ])
-            if ref_fps:
-                cmd.extend(["-r", str(ref_fps)])
-
-        # 添加reference视频输入
-        cmd.extend(["-i", str(reference_path)])
-
-        cmd.extend([
-            "-lavfi",
+        cmd = self._build_metric_cmd(
+            reference_path, distorted_path,
             f"psnr=stats_file={output_log}",
-            "-f",
-            "null",
-            "-",
-        ])
-
-        cmd_id = None
-        if add_command_callback:
-            cmd_id = add_command_callback(command_type, " ".join(cmd), source_file or str(distorted_path))
-        if update_status_callback and cmd_id:
-            update_status_callback(cmd_id, "running")
-
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-
-            stdout, stderr = await _wait_for_process(process, settings.ffmpeg_timeout)
-
-            if process.returncode != 0:
-                if update_status_callback and cmd_id:
-                    update_status_callback(cmd_id, "failed", stderr.decode())
-                raise RuntimeError(f"PSNR calculation failed: {stderr.decode()}")
-
-            # 解析 PSNR 日志
-            result = parse_psnr_summary(output_log)
-            if update_status_callback and cmd_id:
-                update_status_callback(cmd_id, "completed")
-            return result
-
-        except asyncio.TimeoutError:
-            process.kill()
-            if update_status_callback and cmd_id:
-                update_status_callback(cmd_id, "failed", "PSNR calculation timed out")
-            raise RuntimeError("PSNR calculation timed out")
-        except Exception as e:
-            if update_status_callback and cmd_id:
-                update_status_callback(cmd_id, "failed", str(e))
-            raise RuntimeError(f"Failed to calculate PSNR: {str(e)}")
+            ref_width, ref_height, ref_fps, ref_pix_fmt,
+        )
+        return await _run_metric_cmd(
+            cmd, "PSNR", parse_psnr_summary, output_log,
+            add_command_callback, update_status_callback,
+            command_type, source_file or str(distorted_path),
+        )
 
     async def calculate_ssim(
         self,
@@ -371,67 +441,16 @@ class FFmpegService:
         Returns:
             包含 ssim_avg, ssim_y, ssim_u, ssim_v 的字典
         """
-        cmd = [self.ffmpeg_path]
-
-        # 添加distorted视频输入
-        cmd.extend(["-i", str(distorted_path)])
-
-        # 如果是YUV格式，需要为reference视频指定参数
-        if ref_width and ref_height:
-            cmd.extend([
-                "-f", "rawvideo",
-                "-pix_fmt", ref_pix_fmt,
-                "-s", f"{ref_width}x{ref_height}",
-            ])
-            if ref_fps:
-                cmd.extend(["-r", str(ref_fps)])
-
-        # 添加reference视频输入
-        cmd.extend(["-i", str(reference_path)])
-
-        cmd.extend([
-            "-lavfi",
+        cmd = self._build_metric_cmd(
+            reference_path, distorted_path,
             f"ssim=stats_file={output_log}",
-            "-f",
-            "null",
-            "-",
-        ])
-
-        cmd_id = None
-        if add_command_callback:
-            cmd_id = add_command_callback(command_type, " ".join(cmd), source_file or str(distorted_path))
-        if update_status_callback and cmd_id:
-            update_status_callback(cmd_id, "running")
-
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-
-            stdout, stderr = await _wait_for_process(process, settings.ffmpeg_timeout)
-
-            if process.returncode != 0:
-                if update_status_callback and cmd_id:
-                    update_status_callback(cmd_id, "failed", stderr.decode())
-                raise RuntimeError(f"SSIM calculation failed: {stderr.decode()}")
-
-            # 解析 SSIM 日志
-            result = parse_ssim_summary(output_log)
-            if update_status_callback and cmd_id:
-                update_status_callback(cmd_id, "completed")
-            return result
-
-        except asyncio.TimeoutError:
-            process.kill()
-            if update_status_callback and cmd_id:
-                update_status_callback(cmd_id, "failed", "SSIM calculation timed out")
-            raise RuntimeError("SSIM calculation timed out")
-        except Exception as e:
-            if update_status_callback and cmd_id:
-                update_status_callback(cmd_id, "failed", str(e))
-            raise RuntimeError(f"Failed to calculate SSIM: {str(e)}")
+            ref_width, ref_height, ref_fps, ref_pix_fmt,
+        )
+        return await _run_metric_cmd(
+            cmd, "SSIM", parse_ssim_summary, output_log,
+            add_command_callback, update_status_callback,
+            command_type, source_file or str(distorted_path),
+        )
 
     async def calculate_vmaf(
         self,
@@ -464,76 +483,22 @@ class FFmpegService:
         Returns:
             包含 vmaf_mean, vmaf_harmonic_mean 的字典
         """
-        cmd = [self.ffmpeg_path]
-
-        # 添加distorted视频输入
-        cmd.extend(["-i", str(distorted_path)])
-
-        # 如果是YUV格式，需要为reference视频指定参数
-        if ref_width and ref_height:
-            cmd.extend([
-                "-f", "rawvideo",
-                "-pix_fmt", ref_pix_fmt,
-                "-s", f"{ref_width}x{ref_height}",
-            ])
-            if ref_fps:
-                cmd.extend(["-r", str(ref_fps)])
-
-        # 添加reference视频输入
-        cmd.extend(["-i", str(reference_path)])
-
         # 构建VMAF滤镜参数
-        # 如果提供了model_path且存在，使用指定的模型文件
-        # 否则使用FFmpeg内置模型
         if model_path and model_path.exists():
             vmaf_filter = f"libvmaf=model_path={model_path}:log_path={output_json}:log_fmt=json"
         else:
-            # 使用FFmpeg内置模型
             vmaf_filter = f"libvmaf=log_path={output_json}:log_fmt=csv"
 
-        cmd.extend([
-            "-lavfi",
+        cmd = self._build_metric_cmd(
+            reference_path, distorted_path,
             vmaf_filter,
-            "-f",
-            "null",
-            "-",
-        ])
-
-        cmd_id = None
-        if add_command_callback:
-            cmd_id = add_command_callback(command_type, " ".join(cmd), source_file or str(distorted_path))
-        if update_status_callback and cmd_id:
-            update_status_callback(cmd_id, "running")
-
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-
-            stdout, stderr = await _wait_for_process(process, settings.ffmpeg_timeout)
-
-            if process.returncode != 0:
-                if update_status_callback and cmd_id:
-                    update_status_callback(cmd_id, "failed", stderr.decode())
-                raise RuntimeError(f"VMAF calculation failed: {stderr.decode()}")
-
-            # 解析 VMAF JSON
-            result = parse_vmaf_summary(output_json)
-            if update_status_callback and cmd_id:
-                update_status_callback(cmd_id, "completed")
-            return result
-
-        except asyncio.TimeoutError:
-            process.kill()
-            if update_status_callback and cmd_id:
-                update_status_callback(cmd_id, "failed", "VMAF calculation timed out")
-            raise RuntimeError("VMAF calculation timed out")
-        except Exception as e:
-            if update_status_callback and cmd_id:
-                update_status_callback(cmd_id, "failed", str(e))
-            raise RuntimeError(f"Failed to calculate VMAF: {str(e)}")
+            ref_width, ref_height, ref_fps, ref_pix_fmt,
+        )
+        return await _run_metric_cmd(
+            cmd, "VMAF", parse_vmaf_summary, output_json,
+            add_command_callback, update_status_callback,
+            command_type, source_file or str(distorted_path),
+        )
 
     async def encode_video(
         self,
