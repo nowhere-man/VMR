@@ -65,7 +65,7 @@ docker run -d \
     -p "${HOST_REPORTS_PORT}:8079" \
     -v "${DATA_DIR}/jobs:/data/jobs" \
     -v "${DATA_DIR}/templates:/data/templates" \
-    -e VMA_LOG_LEVEL="${VMA_LOG_LEVEL:-ERROR}" \
+    -e VMA_LOG_LEVEL="${VMA_LOG_LEVEL:-error}" \
     "${IMAGE_NAME}"
 
 echo ""

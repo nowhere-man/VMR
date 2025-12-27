@@ -48,7 +48,7 @@ echo "   Web UI:  http://localhost:8080"
 echo "   Reports: http://localhost:8079"
 echo "   API:     http://localhost:8080/api/docs"
 echo ""
-.venv/bin/uvicorn src.main:app --reload --host 0.0.0.0 --port 8080
+.venv/bin/uvicorn src.main:app --reload --host 0.0.0.0 --port 8080 --log-level error
 
 echo "Press Ctrl+C to stop servers"
 echo ""

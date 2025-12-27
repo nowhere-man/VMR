@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from src.utils.url_helpers import build_reports_base_url
 from src.api import (
     jobs_router,
     metrics_analysis_router,
@@ -72,6 +73,7 @@ async def root(request: Request) -> HTMLResponse:
         {
             "request": request,
             "recent_jobs": [],
+            "reports_base_url": build_reports_base_url(request),
         },
     )
 

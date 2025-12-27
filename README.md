@@ -76,7 +76,7 @@ docker run -d \
 | `VMA_TEMPLATES_ROOT_DIR` | /data/templates | Templates directory |
 | `VMA_FFMPEG_PATH` | (empty) | Custom FFmpeg bin directory |
 | `VMA_FFMPEG_TIMEOUT` | 600 | FFmpeg command timeout (seconds) |
-| `VMA_LOG_LEVEL` | ERROR | Log level (DEBUG/INFO/WARNING/ERROR) |
+| `VMA_LOG_LEVEL` | error | Log level ('critical', 'error', 'warning', 'info', 'debug', 'trace') |
 
 ### Container Management
 

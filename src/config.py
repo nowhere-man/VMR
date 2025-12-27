@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     # 服务器配置
     host: str = "0.0.0.0"
     port: int = 8080
+    reports_port: int = 8079  # Streamlit 端口
 
     # 任务存储
     jobs_root_dir: Path = Path("./jobs")

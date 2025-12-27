@@ -47,7 +47,7 @@ ENV VMA_HOST=0.0.0.0 \
     VMA_JOBS_ROOT_DIR=/data/jobs \
     VMA_TEMPLATES_ROOT_DIR=/data/templates \
     VMA_FFMPEG_TIMEOUT=600 \
-    VMA_LOG_LEVEL=ERROR \
+    VMA_LOG_LEVEL=error \
     PYTHONPATH=/app
 
 # 暴露端口
