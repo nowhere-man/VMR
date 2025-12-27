@@ -19,7 +19,7 @@ fi
 
 mkdir -p jobs
 
-export PYTHONPATH=.
+testort PYTHONPATH=.
 
 .venv/bin/streamlit run src/Homepage.py \
     --server.port 8079 \

@@ -33,6 +33,7 @@ from src.utils.streamlit_helpers import (
     render_delta_bar_chart_by_point,
     render_delta_table_expander,
 )
+from src.services.template_storage import template_storage
 
 
 def _list_metrics_jobs(limit: int = 100) -> List[Dict[str, Any]]:
@@ -51,6 +52,47 @@ def _metric_value(metrics: Dict[str, Any], name: str, field: str) -> Optional[fl
     if isinstance(summary, dict) and field in summary:
         return summary.get(field)
     return block.get(field)
+
+
+def _format_points(points: Optional[List[float]]) -> str:
+    if not points:
+        return "-"
+    clean = [p for p in points if isinstance(p, (int, float))]
+    if not clean:
+        return "-"
+    return ", ".join(f"{p:g}" for p in sorted(set(clean)))
+
+
+def _format_encoder_type(value: Optional[Any]) -> str:
+    if isinstance(value, str):
+        return value or "-"
+    if value is not None:
+        return getattr(value, "value", str(value))
+    return "-"
+
+
+def _format_encoder_params(encoder_params: Optional[str]) -> str:
+    return encoder_params or "-"
+
+
+def _get_report_info(data: Dict[str, Any]) -> Dict[str, Any]:
+    template_id = data.get("template_id")
+    template = template_storage.get_template(template_id) if template_id else None
+    template_info: Dict[str, Any] = {}
+    if template:
+        anchor = template.metadata.anchor
+        template_info = {
+            "source_dir": anchor.source_dir,
+            "encoder_type": anchor.encoder_type,
+            "encoder_params": anchor.encoder_params,
+            "bitrate_points": anchor.bitrate_points,
+        }
+    return {
+        "source_dir": template_info.get("source_dir") or data.get("source_dir") or "-",
+        "encoder_type": template_info.get("encoder_type") or data.get("encoder_type"),
+        "encoder_params": template_info.get("encoder_params") or data.get("encoder_params"),
+        "bitrate_points": template_info.get("bitrate_points") or data.get("bitrate_points") or [],
+    }
 
 
 def _build_rows(data: Dict[str, Any], side_label: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
@@ -98,61 +140,52 @@ def _build_bd_rows(df: pd.DataFrame) -> Tuple[List[Dict[str, Any]], List[Dict[st
     bd_metric_rows: List[Dict[str, Any]] = []
     grouped = df.groupby("Video")
     for video, g in grouped:
-        base = g[g["Side"] == "A"]
-        exp = g[g["Side"] == "B"]
-        if base.empty or exp.empty:
+        anchor = g[g["Side"] == "Anchor"]
+        test = g[g["Side"] == "Test"]
+        if anchor.empty or test.empty:
             continue
-        merge = base.merge(exp, on=["Video", "RC", "Point"], suffixes=("_base", "_exp"))
+        merge = anchor.merge(test, on=["Video", "RC", "Point"], suffixes=("_anchor", "_test"))
         if merge.empty:
             continue
-        def _collect(col_base: str, col_exp: str) -> Tuple[List[float], List[float], List[float], List[float]]:
-            merged = merge.dropna(subset=[col_base, col_exp, "Bitrate_kbps_base", "Bitrate_kbps_exp"])
+        def _collect(col_anchor: str, col_test: str) -> Tuple[List[float], List[float], List[float], List[float]]:
+            merged = merge.dropna(subset=[col_anchor, col_test, "Bitrate_kbps_anchor", "Bitrate_kbps_test"])
             if merged.empty:
                 return [], [], [], []
             return (
-                merged["Bitrate_kbps_base"].tolist(),
-                merged[col_base].tolist(),
-                merged["Bitrate_kbps_exp"].tolist(),
-                merged[col_exp].tolist(),
+                merged["Bitrate_kbps_anchor"].tolist(),
+                merged[col_anchor].tolist(),
+                merged["Bitrate_kbps_test"].tolist(),
+                merged[col_test].tolist(),
             )
 
-        base_rates, base_psnr, exp_rates, exp_psnr = _collect("PSNR_base", "PSNR_exp")
-        _, base_ssim, _, exp_ssim = _collect("SSIM_base", "SSIM_exp")
-        _, base_vmaf, _, exp_vmaf = _collect("VMAF_base", "VMAF_exp")
-        _, base_vn, _, exp_vn = _collect("VMAF-NEG_base", "VMAF-NEG_exp")
+        anchor_rates, anchor_psnr, test_rates, test_psnr = _collect("PSNR_anchor", "PSNR_test")
+        _, anchor_ssim, _, test_ssim = _collect("SSIM_anchor", "SSIM_test")
+        _, anchor_vmaf, _, test_vmaf = _collect("VMAF_anchor", "VMAF_test")
+        _, anchor_vn, _, test_vn = _collect("VMAF-NEG_anchor", "VMAF-NEG_test")
         # BD-Rate
         bd_rate_rows.append(
             {
                 "Video": video,
-                "BD-Rate PSNR (%)": _bd_rate(base_rates, base_psnr, exp_rates, exp_psnr),
-                "BD-Rate SSIM (%)": _bd_rate(base_rates, base_ssim, exp_rates, exp_ssim),
-                "BD-Rate VMAF (%)": _bd_rate(base_rates, base_vmaf, exp_rates, exp_vmaf),
-                "BD-Rate VMAF-NEG (%)": _bd_rate(base_rates, base_vn, exp_rates, exp_vn),
+                "BD-Rate PSNR (%)": _bd_rate(anchor_rates, anchor_psnr, test_rates, test_psnr),
+                "BD-Rate SSIM (%)": _bd_rate(anchor_rates, anchor_ssim, test_rates, test_ssim),
+                "BD-Rate VMAF (%)": _bd_rate(anchor_rates, anchor_vmaf, test_rates, test_vmaf),
+                "BD-Rate VMAF-NEG (%)": _bd_rate(anchor_rates, anchor_vn, test_rates, test_vn),
             }
         )
         # BD-Metrics
         bd_metric_rows.append(
             {
                 "Video": video,
-                "BD PSNR": _bd_metrics(base_rates, base_psnr, exp_rates, exp_psnr),
-                "BD SSIM": _bd_metrics(base_rates, base_ssim, exp_rates, exp_ssim),
-                "BD VMAF": _bd_metrics(base_rates, base_vmaf, exp_rates, exp_vmaf),
-                "BD VMAF-NEG": _bd_metrics(base_rates, base_vn, exp_rates, exp_vn),
+                "BD PSNR": _bd_metrics(anchor_rates, anchor_psnr, test_rates, test_psnr),
+                "BD SSIM": _bd_metrics(anchor_rates, anchor_ssim, test_rates, test_ssim),
+                "BD VMAF": _bd_metrics(anchor_rates, anchor_vmaf, test_rates, test_vmaf),
+                "BD VMAF-NEG": _bd_metrics(anchor_rates, anchor_vn, test_rates, test_vn),
             }
         )
     return bd_rate_rows, bd_metric_rows
 
 
 st.set_page_config(page_title="Metrics分析", page_icon="📊", layout="wide")
-
-# 隐藏默认的 pages 导航，只显示 Contents 目录
-st.markdown("""
-<style>
-    [data-testid="stSidebarNav"] {
-        display: none;
-    }
-</style>
-""", unsafe_allow_html=True)
 
 st.markdown("<h1 style='text-align:center;'>📊 Metrics分析</h1>", unsafe_allow_html=True)
 
@@ -168,20 +201,20 @@ if len(options) < 2:
 
 col1, col2 = st.columns(2)
 with col1:
-    job_a = st.selectbox("任务 A", options=options, key="metrics_job_a")
+    anchor_job_id = st.selectbox("Anchor 任务", options=options, key="metrics_job_a")
 with col2:
-    job_b = st.selectbox("任务 B", options=[o for o in options if o != job_a], key="metrics_job_b")
+    test_job_id = st.selectbox("Test 任务", options=[o for o in options if o != anchor_job_id], key="metrics_job_b")
 
-if not job_a or not job_b:
+if not anchor_job_id or not test_job_id:
     st.stop()
 
-data_a = _load_analyse(job_a)
-data_b = _load_analyse(job_b)
+anchor_data = _load_analyse(anchor_job_id)
+test_data = _load_analyse(test_job_id)
 
-rows_a, perf_rows_a = _build_rows(data_a, "A")
-rows_b, perf_rows_b = _build_rows(data_b, "B")
-rows = rows_a + rows_b
-perf_rows = perf_rows_a + perf_rows_b
+anchor_rows, anchor_perf_rows = _build_rows(anchor_data, "Anchor")
+test_rows, test_perf_rows = _build_rows(test_data, "Test")
+rows = anchor_rows + test_rows
+perf_rows = anchor_perf_rows + test_perf_rows
 df = pd.DataFrame(rows)
 if df.empty:
     st.warning("没有可用于对比的指标数据。")
@@ -195,9 +228,10 @@ has_bd = point_count >= 4
 with st.sidebar:
     st.markdown("### 📑 Contents")
     contents = [
+        "- [Information](#information)",
         "- [Overall](#overall)",
         "- [Metrics](#metrics)",
-        "  - [A vs B 对比](#a-vs-b-对比)",
+        "  - [Anchor vs Test 对比](#anchor-vs-test-对比)",
     ]
     if has_bd:
         contents += [
@@ -222,6 +256,29 @@ html {
 }
 </style>
 """, unsafe_allow_html=True)
+
+# ========== Information ==========
+st.header("Information", anchor="information")
+
+info_anchor = _get_report_info(anchor_data)
+info_test = _get_report_info(test_data)
+
+info_df = pd.DataFrame(
+    [
+        {"项目": "编码器类型", "Anchor": _format_encoder_type(info_anchor.get("encoder_type")), "Test": _format_encoder_type(info_test.get("encoder_type"))},
+        {
+            "项目": "编码参数",
+            "Anchor": _format_encoder_params(info_anchor.get("encoder_params")),
+            "Test": _format_encoder_params(info_test.get("encoder_params")),
+        },
+        {
+            "项目": "码率点位",
+            "Anchor": _format_points(info_anchor.get("bitrate_points")),
+            "Test": _format_points(info_test.get("bitrate_points")),
+        },
+    ]
+)
+st.dataframe(info_df, use_container_width=True, hide_index=True)
 
 bd_list_for_overall: List[Dict[str, Any]] = []
 bd_rate_rows: List[Dict[str, Any]] = []
@@ -253,8 +310,8 @@ render_overall_section(
     df_metrics=df,
     df_perf=df_perf_overall,
     bd_list=bd_list_for_overall,
-    base_label="A",
-    exp_label="B",
+    anchor_label="Anchor",
+    test_label="Test",
     show_bd=has_bd,
 )
 
@@ -273,34 +330,34 @@ metrics_format = {
 styled_metrics = df.style.format(metrics_format, na_rep="-")
 st.dataframe(styled_metrics, use_container_width=True, hide_index=True)
 
-base_df = df[df["Side"] == "A"]
-exp_df = df[df["Side"] == "B"]
-merged = base_df.merge(exp_df, on=["Video", "RC", "Point"], suffixes=("_base", "_exp"))
+anchor_df = df[df["Side"] == "Anchor"]
+test_df = df[df["Side"] == "Test"]
+merged = anchor_df.merge(test_df, on=["Video", "RC", "Point"], suffixes=("_anchor", "_test"))
 if not merged.empty:
-    merged["Bitrate Δ%"] = ((merged["Bitrate_kbps_exp"] - merged["Bitrate_kbps_base"]) / merged["Bitrate_kbps_base"].replace(0, pd.NA)) * 100
-    merged["PSNR Δ"] = merged["PSNR_exp"] - merged["PSNR_base"]
-    merged["SSIM Δ"] = merged["SSIM_exp"] - merged["SSIM_base"]
-    merged["VMAF Δ"] = merged["VMAF_exp"] - merged["VMAF_base"]
-    merged["VMAF-NEG Δ"] = merged["VMAF-NEG_exp"] - merged["VMAF-NEG_base"]
-    st.subheader("A vs B 对比", anchor="a-vs-b-对比")
+    merged["Bitrate Δ%"] = ((merged["Bitrate_kbps_test"] - merged["Bitrate_kbps_anchor"]) / merged["Bitrate_kbps_anchor"].replace(0, pd.NA)) * 100
+    merged["PSNR Δ"] = merged["PSNR_test"] - merged["PSNR_anchor"]
+    merged["SSIM Δ"] = merged["SSIM_test"] - merged["SSIM_anchor"]
+    merged["VMAF Δ"] = merged["VMAF_test"] - merged["VMAF_anchor"]
+    merged["VMAF-NEG Δ"] = merged["VMAF-NEG_test"] - merged["VMAF-NEG_anchor"]
+    st.subheader("Anchor vs Test 对比", anchor="anchor-vs-test-对比")
 
     # 格式化精度
     comparison_format = {
         "Point": "{:.2f}",
-        "Bitrate_kbps_base": "{:.2f}",
-        "Bitrate_kbps_exp": "{:.2f}",
+        "Bitrate_kbps_anchor": "{:.2f}",
+        "Bitrate_kbps_test": "{:.2f}",
         "Bitrate Δ%": "{:.2f}",
-        "PSNR_base": "{:.4f}",
-        "PSNR_exp": "{:.4f}",
+        "PSNR_anchor": "{:.4f}",
+        "PSNR_test": "{:.4f}",
         "PSNR Δ": "{:.4f}",
-        "SSIM_base": "{:.4f}",
-        "SSIM_exp": "{:.4f}",
+        "SSIM_anchor": "{:.4f}",
+        "SSIM_test": "{:.4f}",
         "SSIM Δ": "{:.4f}",
-        "VMAF_base": "{:.2f}",
-        "VMAF_exp": "{:.2f}",
+        "VMAF_anchor": "{:.2f}",
+        "VMAF_test": "{:.2f}",
         "VMAF Δ": "{:.2f}",
-        "VMAF-NEG_base": "{:.2f}",
-        "VMAF-NEG_exp": "{:.2f}",
+        "VMAF-NEG_anchor": "{:.2f}",
+        "VMAF-NEG_test": "{:.2f}",
         "VMAF-NEG Δ": "{:.2f}",
     }
 
@@ -309,20 +366,20 @@ if not merged.empty:
             "Video",
             "RC",
             "Point",
-            "Bitrate_kbps_base",
-            "Bitrate_kbps_exp",
+            "Bitrate_kbps_anchor",
+            "Bitrate_kbps_test",
             "Bitrate Δ%",
-            "PSNR_base",
-            "PSNR_exp",
+            "PSNR_anchor",
+            "PSNR_test",
             "PSNR Δ",
-            "SSIM_base",
-            "SSIM_exp",
+            "SSIM_anchor",
+            "SSIM_test",
             "SSIM Δ",
-            "VMAF_base",
-            "VMAF_exp",
+            "VMAF_anchor",
+            "VMAF_test",
             "VMAF Δ",
-            "VMAF-NEG_base",
-            "VMAF-NEG_exp",
+            "VMAF-NEG_anchor",
+            "VMAF-NEG_test",
             "VMAF-NEG Δ",
         ]
     ].sort_values(by=["Video", "Point"]).style.format(comparison_format, na_rep="-")
@@ -354,24 +411,24 @@ if perf_rows:
 
     # 1. 汇总Diff表格
     st.subheader("Delta", anchor="perf-diff")
-    base_perf = df_perf[df_perf["Side"] == "A"]
-    exp_perf = df_perf[df_perf["Side"] == "B"]
-    merged_perf = base_perf.merge(
-        exp_perf,
+    anchor_perf = df_perf[df_perf["Side"] == "Anchor"]
+    test_perf = df_perf[df_perf["Side"] == "Test"]
+    merged_perf = anchor_perf.merge(
+        test_perf,
         on=["Video", "Point"],
-        suffixes=("_base", "_exp"),
+        suffixes=("_anchor", "_test"),
     )
     if not merged_perf.empty:
-        merged_perf["Δ FPS"] = merged_perf["FPS_exp"] - merged_perf["FPS_base"]
-        merged_perf["Δ CPU Avg(%)"] = merged_perf["CPU Avg(%)_exp"] - merged_perf["CPU Avg(%)_base"]
+        merged_perf["Δ FPS"] = merged_perf["FPS_test"] - merged_perf["FPS_anchor"]
+        merged_perf["Δ CPU Avg(%)"] = merged_perf["CPU Avg(%)_test"] - merged_perf["CPU Avg(%)_anchor"]
 
         diff_perf_df = merged_perf[
-            ["Video", "Point", "FPS_base", "FPS_exp", "Δ FPS", "CPU Avg(%)_base", "CPU Avg(%)_exp", "Δ CPU Avg(%)"]
+            ["Video", "Point", "FPS_anchor", "FPS_test", "Δ FPS", "CPU Avg(%)_anchor", "CPU Avg(%)_test", "Δ CPU Avg(%)"]
         ].rename(columns={
-            "FPS_base": "A FPS",
-            "FPS_exp": "B FPS",
-            "CPU Avg(%)_base": "A CPU(%)",
-            "CPU Avg(%)_exp": "B CPU(%)",
+            "FPS_anchor": "Anchor FPS",
+            "FPS_test": "Test FPS",
+            "CPU Avg(%)_anchor": "Anchor CPU(%)",
+            "CPU Avg(%)_test": "Test CPU(%)",
         }).sort_values(by=["Video", "Point"]).reset_index(drop=True)
 
         # 合并同一视频的名称
@@ -385,11 +442,11 @@ if perf_rows:
         # 格式化精度：Point、FPS 和 CPU 都保留2位小数
         perf_format_dict = {
             "Point": "{:.2f}",
-            "A FPS": "{:.2f}",
-            "B FPS": "{:.2f}",
+            "Anchor FPS": "{:.2f}",
+            "Test FPS": "{:.2f}",
             "Δ FPS": "{:.2f}",
-            "A CPU(%)": "{:.2f}",
-            "B CPU(%)": "{:.2f}",
+            "Anchor CPU(%)": "{:.2f}",
+            "Test CPU(%)": "{:.2f}",
             "Δ CPU Avg(%)": "{:.2f}",
         }
 
@@ -427,34 +484,34 @@ if perf_rows:
     agg_interval = st.slider("聚合间隔 (ms)", min_value=100, max_value=1000, value=100, step=100, key="cpu_agg")
 
     # 获取对应的CPU采样数据
-    base_samples: List[float] = []
-    exp_samples: List[float] = []
+    anchor_samples: List[float] = []
+    test_samples: List[float] = []
     for _, row in df_perf.iterrows():
         if row["Video"] == selected_video_perf and row["Point"] == selected_point_perf:
-            if row["Side"] == "A":
-                base_samples = row.get("cpu_samples", []) or []
+            if row["Side"] == "Anchor":
+                anchor_samples = row.get("cpu_samples", []) or []
             else:
-                exp_samples = row.get("cpu_samples", []) or []
+                test_samples = row.get("cpu_samples", []) or []
 
-    if base_samples or exp_samples:
+    if anchor_samples or test_samples:
         fig_cpu = create_cpu_chart(
-            base_samples=base_samples,
-            exp_samples=exp_samples,
+            anchor_samples=anchor_samples,
+            test_samples=test_samples,
             agg_interval=agg_interval,
             title=f"CPU占用率 - {selected_video_perf} ({selected_point_perf})",
-            base_label="A",
-            exp_label="B",
+            anchor_label="Anchor",
+            test_label="Test",
         )
         st.plotly_chart(fig_cpu, use_container_width=True)
 
         # 显示平均CPU占用率对比
-        base_avg_cpu = sum(base_samples) / len(base_samples) if base_samples else 0
-        exp_avg_cpu = sum(exp_samples) / len(exp_samples) if exp_samples else 0
-        cpu_diff_pct = ((exp_avg_cpu - base_avg_cpu) / base_avg_cpu * 100) if base_avg_cpu > 0 else 0
+        anchor_avg_cpu = sum(anchor_samples) / len(anchor_samples) if anchor_samples else 0
+        test_avg_cpu = sum(test_samples) / len(test_samples) if test_samples else 0
+        cpu_diff_pct = ((test_avg_cpu - anchor_avg_cpu) / anchor_avg_cpu * 100) if anchor_avg_cpu > 0 else 0
 
         col_cpu1, col_cpu2, col_cpu3 = st.columns(3)
-        col_cpu1.metric("A Average CPU Usage", f"{base_avg_cpu:.2f}%")
-        col_cpu2.metric("B Average CPU Usage", f"{exp_avg_cpu:.2f}%")
+        col_cpu1.metric("Anchor Average CPU Usage", f"{anchor_avg_cpu:.2f}%")
+        col_cpu2.metric("Test Average CPU Usage", f"{test_avg_cpu:.2f}%")
         col_cpu3.metric("CPU Usage 差异", f"{cpu_diff_pct:+.2f}%", delta=f"{cpu_diff_pct:+.2f}%", delta_color="inverse")
     else:
         st.info("该视频/点位没有CPU采样数据。")
@@ -463,8 +520,8 @@ if perf_rows:
     st.subheader("FPS", anchor="fps-chart")
     fig_fps = create_fps_chart(
         df_perf=df_perf,
-        base_label="A",
-        exp_label="B",
+        anchor_label="Anchor",
+        test_label="Test",
     )
     st.plotly_chart(fig_fps, use_container_width=True)
 
@@ -487,15 +544,15 @@ else:
 
 st.header("Machine Info", anchor="环境信息")
 
-env_a = data_a.get("environment") or {}
-env_b = data_b.get("environment") or {}
-if env_a or env_b:
+env_anchor = anchor_data.get("environment") or {}
+env_test = test_data.get("environment") or {}
+if env_anchor or env_test:
     col1, col2 = st.columns(2)
     with col1:
-        st.subheader("任务 A")
-        st.markdown(format_env_info(env_a))
+        st.subheader("Anchor 任务")
+        st.markdown(format_env_info(env_anchor))
     with col2:
-        st.subheader("任务 B")
-        st.markdown(format_env_info(env_b))
+        st.subheader("Test 任务")
+        st.markdown(format_env_info(env_test))
 else:
     st.info("未采集到环境信息。")

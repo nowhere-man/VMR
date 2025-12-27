@@ -21,14 +21,14 @@ function showToast(message, tone = 'info') {
   const toast = _getToastEl();
   if (!toast) return;
   toast.textContent = message;
-  const base = 'fixed top-4 right-4 max-w-xs text-sm rounded-lg shadow-lg px-4 py-3 z-50';
+  const anchor = 'fixed top-4 right-4 max-w-xs text-sm rounded-lg shadow-lg px-4 py-3 z-50';
   const toneClass =
     tone === 'error'
       ? 'bg-red-600 text-white'
       : tone === 'success'
       ? 'bg-green-600 text-white'
       : 'bg-gray-900 text-white';
-  toast.className = `${base} ${toneClass}`;
+  toast.className = `${anchor} ${toneClass}`;
   toast.classList.remove('hidden');
   setTimeout(() => toast.classList.add('hidden'), 2200);
 }

@@ -248,7 +248,7 @@ for item in encoded_items:
 
 df_metrics = pd.DataFrame(rows)
 
-base_columns = [
+anchor_columns = [
     ("Encoded", ""),
     ("PSNR", "Y"),
     ("PSNR", "U"),
@@ -279,7 +279,7 @@ display_df = pd.DataFrame(
         ("Bitrate", "Avg kbps"): df_metrics["Bitrate_kbps"],
     }
 )
-display_df.columns = pd.MultiIndex.from_tuples(base_columns)
+display_df.columns = pd.MultiIndex.from_tuples(anchor_columns)
 
 # 格式化显示精度
 format_dict = {
@@ -303,24 +303,24 @@ st.dataframe(styled_overall, use_container_width=True, hide_index=True)
 # Delta 表格
 st.subheader("Delta", anchor="delta")
 if len(df_metrics) >= 2:
-    base = df_metrics.iloc[0]
+    anchor = df_metrics.iloc[0]
     diff_data = {
         ("Encoded", ""): df_metrics["Encoded"],
-        ("PSNR", "Y"): df_metrics["PSNR_y"] - base["PSNR_y"],
-        ("PSNR", "U"): df_metrics["PSNR_u"] - base["PSNR_u"],
-        ("PSNR", "V"): df_metrics["PSNR_v"] - base["PSNR_v"],
-        ("PSNR", "AVG"): df_metrics["PSNR_avg"] - base["PSNR_avg"],
-        ("SSIM", "Y"): df_metrics["SSIM_y"] - base["SSIM_y"],
-        ("SSIM", "U"): df_metrics["SSIM_u"] - base["SSIM_u"],
-        ("SSIM", "V"): df_metrics["SSIM_v"] - base["SSIM_v"],
-        ("SSIM", "AVG"): df_metrics["SSIM_avg"] - base["SSIM_avg"],
-        ("VMAF", "VMAF"): df_metrics["VMAF"] - base["VMAF"],
-        ("VMAF", "VMAF_neg"): df_metrics["VMAF_neg"] - base["VMAF_neg"],
-        ("Bitrate", "Avg kbps"): df_metrics["Bitrate_kbps"] - base["Bitrate_kbps"],
+        ("PSNR", "Y"): df_metrics["PSNR_y"] - anchor["PSNR_y"],
+        ("PSNR", "U"): df_metrics["PSNR_u"] - anchor["PSNR_u"],
+        ("PSNR", "V"): df_metrics["PSNR_v"] - anchor["PSNR_v"],
+        ("PSNR", "AVG"): df_metrics["PSNR_avg"] - anchor["PSNR_avg"],
+        ("SSIM", "Y"): df_metrics["SSIM_y"] - anchor["SSIM_y"],
+        ("SSIM", "U"): df_metrics["SSIM_u"] - anchor["SSIM_u"],
+        ("SSIM", "V"): df_metrics["SSIM_v"] - anchor["SSIM_v"],
+        ("SSIM", "AVG"): df_metrics["SSIM_avg"] - anchor["SSIM_avg"],
+        ("VMAF", "VMAF"): df_metrics["VMAF"] - anchor["VMAF"],
+        ("VMAF", "VMAF_neg"): df_metrics["VMAF_neg"] - anchor["VMAF_neg"],
+        ("Bitrate", "Avg kbps"): df_metrics["Bitrate_kbps"] - anchor["Bitrate_kbps"],
     }
     diff_df = pd.DataFrame(diff_data)
     diff_df.iloc[0, 1:] = 0  # 基准行显示 0
-    diff_df.columns = pd.MultiIndex.from_tuples(base_columns)
+    diff_df.columns = pd.MultiIndex.from_tuples(anchor_columns)
 
     # 定义颜色样式函数
     def _color_diff(val):

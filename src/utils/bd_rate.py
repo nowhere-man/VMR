@@ -99,8 +99,8 @@ def bd_rate(
     if int1 is None or int2 is None:
         return None
 
-    avg_exp_diff = (int2 - int1) / (max_int - min_int)
-    return (np.exp(avg_exp_diff) - 1) * 100
+    avg_test_diff = (int2 - int1) / (max_int - min_int)
+    return (np.test(avg_test_diff) - 1) * 100
 
 
 def bd_metrics(

@@ -110,7 +110,7 @@ class MetricsAnalysisRunner:
     async def execute(self, template: EncodingTemplate, job=None) -> Dict[str, Any]:
         if template.metadata.template_type != TemplateType.METRICS_ANALYSIS:
             raise ValueError("模板类型不匹配")
-        config = template.metadata.baseline
+        config = template.metadata.anchor
 
         sources = await _collect_sources(config.source_dir)
         ordered_sources = sorted(sources, key=lambda s: s.path.name)

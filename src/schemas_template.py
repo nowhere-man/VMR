@@ -22,14 +22,14 @@ class TemplateSidePayload(BaseModel):
 class CreateTemplateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = Field(None, max_length=500)
-    baseline: TemplateSidePayload
+    anchor: TemplateSidePayload
     test: TemplateSidePayload
 
 
 class UpdateTemplateRequest(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     description: Optional[str] = Field(None, max_length=500)
-    baseline: Optional[TemplateSidePayload] = None
+    anchor: Optional[TemplateSidePayload] = None
     test: Optional[TemplateSidePayload] = None
 
 
@@ -39,10 +39,10 @@ class TemplateResponse(BaseModel):
     description: Optional[str]
     template_type: str
     # 返回原始 dict，避免前端编辑时因路径校验失败
-    baseline: dict
+    anchor: dict
     test: Optional[dict] = None
-    baseline_computed: bool
-    baseline_fingerprint: Optional[str]
+    anchor_computed: bool
+    anchor_fingerprint: Optional[str]
     created_at: datetime
     updated_at: datetime
 
@@ -65,8 +65,8 @@ class TemplateListItem(BaseModel):
     description: Optional[str]
     created_at: datetime
     template_type: str
-    baseline_source_dir: str
-    baseline_bitstream_dir: str
+    anchor_source_dir: str
+    anchor_bitstream_dir: str
     test_source_dir: Optional[str] = None
     test_bitstream_dir: Optional[str] = None
-    baseline_computed: bool = False
+    anchor_computed: bool = False

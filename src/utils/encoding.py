@@ -63,10 +63,10 @@ async def probe_media(path: Path) -> Tuple[int, int, float]:
 
 async def collect_sources(source_dir: str) -> List[SourceInfo]:
     """收集源目录下的所有视频文件信息"""
-    base = Path(source_dir)
-    if not base.is_dir():
+    anchor = Path(source_dir)
+    if not anchor.is_dir():
         raise ValueError(f"源目录不存在: {source_dir}")
-    files = list_sources(base)
+    files = list_sources(anchor)
     if not files:
         raise ValueError(f"源目录为空: {source_dir}")
 

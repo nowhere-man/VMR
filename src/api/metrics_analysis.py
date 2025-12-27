@@ -39,7 +39,7 @@ async def create_metrics_template(request: CreateMetricsTemplateRequest) -> dict
         name=request.name,
         description=request.description,
         template_type=TemplateType.METRICS_ANALYSIS,
-        baseline=cfg,
+        anchor=cfg,
         test=None,
     )
     try:
@@ -64,8 +64,8 @@ async def list_metrics_templates(limit: Optional[int] = None) -> List[MetricsTem
                 name=t.metadata.name,
                 description=t.metadata.description,
                 created_at=t.metadata.created_at,
-                source_dir=t.metadata.baseline.source_dir,
-                bitstream_dir=t.metadata.baseline.bitstream_dir,
+                source_dir=t.metadata.anchor.source_dir,
+                bitstream_dir=t.metadata.anchor.bitstream_dir,
                 template_type=t.metadata.template_type.value,
             )
         )
@@ -97,7 +97,7 @@ async def update_metrics_template(template_id: str, request: UpdateMetricsTempla
     if request.description is not None:
         template.metadata.description = request.description
     if request.config is not None:
-        template.metadata.baseline = TemplateSideConfig(**request.config.model_dump())
+        template.metadata.anchor = TemplateSideConfig(**request.config.model_dump())
 
     template_storage.update_template(template)
 
@@ -126,7 +126,7 @@ async def validate_metrics_template(template_id: str) -> ValidateMetricsTemplate
     if not template or template.metadata.template_type != TemplateType.METRICS_ANALYSIS:
         raise HTTPException(status_code=404, detail=f"Template {template_id} not found")
 
-    c = template.metadata.baseline
+    c = template.metadata.anchor
     source_ok = dir_exists(c.source_dir)
     output_ok = dir_writable(c.bitstream_dir)
 

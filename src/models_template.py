@@ -1,5 +1,5 @@
 """
-模板数据模型（Baseline / Test）
+模板数据模型（Anchor / Test）
 
 允许破坏式重构：仅保留当前需求相关的字段。
 """
@@ -19,7 +19,7 @@ class EncoderType(str, Enum):
 
 
 class TemplateType(str, Enum):
-    COMPARISON = "comparison"  # Baseline vs Test
+    COMPARISON = "comparison"  # Anchor vs Test
     METRICS_ANALYSIS = "metrics_analysis"  # 单侧 Metrics 分析模板
 
 
@@ -29,7 +29,7 @@ class RateControl(str, Enum):
 
 
 class TemplateSideConfig(BaseModel):
-    """Baseline / Test 侧配置"""
+    """Anchor / Test 侧配置"""
 
     skip_encode: bool = Field(default=False, description="跳过转码")
     source_dir: str = Field(..., description="源视频目录（仅扫一级）")
@@ -73,11 +73,11 @@ class EncodingTemplateMetadata(BaseModel):
 
     template_type: TemplateType = Field(default=TemplateType.COMPARISON, description="模板类型")
 
-    baseline: TemplateSideConfig
+    anchor: TemplateSideConfig
     test: Optional[TemplateSideConfig] = None
 
-    baseline_computed: bool = Field(default=False, description="Baseline 是否已计算完成")
-    baseline_fingerprint: Optional[str] = Field(None, description="Baseline 配置指纹，用于变更检测")
+    anchor_computed: bool = Field(default=False, description="Anchor 是否已计算完成")
+    anchor_fingerprint: Optional[str] = Field(None, description="Anchor 配置指纹，用于变更检测")
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -93,10 +93,10 @@ class EncodingTemplateMetadata(BaseModel):
             if self.test is None:
                 raise ValueError("Comparison 模板需要 Test 配置")
         else:
-            # Metrics 分析模板不需要 test，也不需要 baseline_computed
+            # Metrics 分析模板不需要 test，也不需要 anchor_computed
             self.test = None
-            self.baseline_computed = False
-            self.baseline_fingerprint = None
+            self.anchor_computed = False
+            self.anchor_fingerprint = None
         return self
 
 

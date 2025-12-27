@@ -1,5 +1,5 @@
 """
-模板执行与指标计算（Baseline / Test）
+模板执行与指标计算（Anchor / Test）
 
 尽量复用现有码流分析逻辑，允许破坏式实现。
 """
@@ -344,7 +344,7 @@ async def _encode_side(
     job=None,
 ) -> Tuple[Dict[str, List[Path]], Dict[str, List[PerformanceData]]]:
     """
-    编码一侧（Baseline 或 Test）的所有源文件
+    编码一侧（Anchor 或 Test）的所有源文件
     返回: (outputs, performance_data)
         - outputs: {source_stem: [encoded_path, ...]}
         - performance_data: {source_stem: [PerformanceData, ...]}
@@ -442,41 +442,41 @@ async def run_template(
         except Exception:
             pass
     # 校验码控/点位一致性
-    if template.metadata.baseline.rate_control != template.metadata.test.rate_control:
-        raise ValueError("Baseline 与 Test 的码控方式不一致")
-    if template.metadata.baseline.encoder_type and template.metadata.test.encoder_type:
-        if template.metadata.baseline.encoder_type != template.metadata.test.encoder_type:
-            raise ValueError("Baseline 与 Test 的编码器类型不一致")
-    if sorted(template.metadata.baseline.bitrate_points or []) != sorted(template.metadata.test.bitrate_points or []):
-        raise ValueError("Baseline 与 Test 的码率点位不一致")
+    if template.metadata.anchor.rate_control != template.metadata.test.rate_control:
+        raise ValueError("Anchor 与 Test 的码控方式不一致")
+    if template.metadata.anchor.encoder_type and template.metadata.test.encoder_type:
+        if template.metadata.anchor.encoder_type != template.metadata.test.encoder_type:
+            raise ValueError("Anchor 与 Test 的编码器类型不一致")
+    if sorted(template.metadata.anchor.bitrate_points or []) != sorted(template.metadata.test.bitrate_points or []):
+        raise ValueError("Anchor 与 Test 的码率点位不一致")
     # 收集源并按 stem 对齐
-    baseline_sources = await _collect_sources(template.metadata.baseline.source_dir)
+    anchor_sources = await _collect_sources(template.metadata.anchor.source_dir)
     test_sources = await _collect_sources(template.metadata.test.source_dir)
-    base_map = {p.path.stem: p for p in baseline_sources}
+    anchor_map = {p.path.stem: p for p in anchor_sources}
     test_map = {p.path.stem: p for p in test_sources}
-    if set(base_map.keys()) != set(test_map.keys()):
-        missing_a = set(base_map.keys()) - set(test_map.keys())
-        missing_b = set(test_map.keys()) - set(base_map.keys())
-        raise ValueError(f"源文件不匹配: baseline 多 {missing_a}，test 多 {missing_b}")
-    ordered_sources = [base_map[k] for k in sorted(base_map.keys())]
+    if set(anchor_map.keys()) != set(test_map.keys()):
+        missing_a = set(anchor_map.keys()) - set(test_map.keys())
+        missing_b = set(test_map.keys()) - set(anchor_map.keys())
+        raise ValueError(f"源文件不匹配: Anchor 多 {missing_a}，Test 多 {missing_b}")
+    ordered_sources = [anchor_map[k] for k in sorted(anchor_map.keys())]
 
-    # Baseline 编码/校验
+    # Anchor 编码/校验
     def _has_files(p: Path) -> bool:
         return any(p.glob("*")) if p.exists() else False
 
-    baseline_needed = (not template.metadata.baseline_computed) or (not _has_files(Path(template.metadata.baseline.bitstream_dir)))
+    anchor_needed = (not template.metadata.anchor_computed) or (not _has_files(Path(template.metadata.anchor.bitstream_dir)))
 
-    # 收集 Baseline 环境信息（编码前）
-    baseline_env = _env_info()
+    # 收集 Anchor 环境信息（编码前）
+    anchor_env = _env_info()
 
-    baseline_outputs, baseline_perfs = await _encode_side(
-        template.metadata.baseline,
+    anchor_outputs, anchor_perfs = await _encode_side(
+        template.metadata.anchor,
         ordered_sources,
-        recompute=baseline_needed,
+        recompute=anchor_needed,
         job=job,
     )
-    template.metadata.baseline_computed = True
-    template.metadata.baseline_fingerprint = _fingerprint(template.metadata.baseline)
+    template.metadata.anchor_computed = True
+    template.metadata.anchor_fingerprint = _fingerprint(template.metadata.anchor)
 
     # Test 编码/校验
     # 收集 Test 环境信息（编码前）
@@ -498,19 +498,19 @@ async def run_template(
 
     for src in ordered_sources:
         key = src.path.stem
-        baseline_paths = baseline_outputs.get(key, [])
+        anchor_paths = anchor_outputs.get(key, [])
         test_paths = test_outputs.get(key, [])
 
-        if not baseline_paths or not test_paths:
+        if not anchor_paths or not test_paths:
             raise ValueError(f"缺少码流: {src.path.name}")
 
         analysis_dir = analysis_root / src.path.stem
         analysis_dir.mkdir(parents=True, exist_ok=True)
 
-        base_report, base_summary = await build_bitstream_report(
+        anchor_report, anchor_summary = await build_bitstream_report(
             reference_path=src.path,
-            encoded_paths=baseline_paths,
-            analysis_dir=analysis_dir / "baseline",
+            encoded_paths=anchor_paths,
+            analysis_dir=analysis_dir / "anchor",
             raw_width=src.width if src.is_yuv else None,
             raw_height=src.height if src.is_yuv else None,
             raw_fps=src.fps if src.is_yuv else None,
@@ -563,11 +563,11 @@ async def run_template(
             return pts
 
         # encoded summaries are in report["encoded"]
-        base_enc = base_report.get("encoded") or []
+        anchor_enc = anchor_report.get("encoded") or []
         test_enc = test_report.get("encoded") or []
 
         def _pair_curves(key):
-            pts_a = _collect(base_enc, key)
+            pts_a = _collect(anchor_enc, key)
             pts_b = _collect(test_enc, key)
             if len(pts_a) < 4 or len(pts_b) < 4:
                 return None
@@ -578,7 +578,7 @@ async def run_template(
         def _pair_metrics(key):
             pts_a = []
             pts_b = []
-            for series, target in ((base_enc, pts_a), (test_enc, pts_b)):
+            for series, target in ((anchor_enc, pts_a), (test_enc, pts_b)):
                 for item in series:
                     bitrate = _extract_bitrate(item)
                     val = _extract_metric_value(item, key)
@@ -605,14 +605,14 @@ async def run_template(
         )
 
         # 将性能数据添加到 summary 的 encoded 列表中
-        base_perf_list = baseline_perfs.get(key, [])
+        anchor_perf_list = anchor_perfs.get(key, [])
         test_perf_list = test_perfs.get(key, [])
 
-        # 为 baseline encoded 添加性能数据
-        if base_summary and "encoded" in base_summary:
-            for i, enc_item in enumerate(base_summary["encoded"]):
-                if i < len(base_perf_list):
-                    perf_dict = base_perf_list[i].to_dict()
+        # 为 anchor encoded 添加性能数据
+        if anchor_summary and "encoded" in anchor_summary:
+            for i, enc_item in enumerate(anchor_summary["encoded"]):
+                if i < len(anchor_perf_list):
+                    perf_dict = anchor_perf_list[i].to_dict()
                     if perf_dict:  # 只有有数据时才添加
                         enc_item["performance"] = perf_dict
 
@@ -627,7 +627,7 @@ async def run_template(
         report_entries.append(
             {
                 "source": src.path.name,
-                "baseline": base_summary,
+                "anchor": anchor_summary,
                 "test": test_summary,
             }
         )
@@ -636,13 +636,13 @@ async def run_template(
         "kind": "template_metrics",
         "template_id": template.template_id,
         "template_name": template.metadata.name,
-        "rate_control": template.metadata.baseline.rate_control.value if template.metadata.baseline.rate_control else None,
-        "bitrate_points": template.metadata.baseline.bitrate_points,
-        "baseline": {
-            "source_dir": template.metadata.baseline.source_dir,
-            "bitstream_dir": template.metadata.baseline.bitstream_dir,
-            "encoder_type": template.metadata.baseline.encoder_type.value if template.metadata.baseline.encoder_type else None,
-            "encoder_params": template.metadata.baseline.encoder_params,
+        "rate_control": template.metadata.anchor.rate_control.value if template.metadata.anchor.rate_control else None,
+        "bitrate_points": template.metadata.anchor.bitrate_points,
+        "anchor": {
+            "source_dir": template.metadata.anchor.source_dir,
+            "bitstream_dir": template.metadata.anchor.bitstream_dir,
+            "encoder_type": template.metadata.anchor.encoder_type.value if template.metadata.anchor.encoder_type else None,
+            "encoder_params": template.metadata.anchor.encoder_params,
         },
         "test": {
             "source_dir": template.metadata.test.source_dir,
@@ -650,11 +650,11 @@ async def run_template(
             "encoder_type": template.metadata.test.encoder_type.value if template.metadata.test.encoder_type else None,
             "encoder_params": template.metadata.test.encoder_params,
         },
-        "baseline_computed": template.metadata.baseline_computed,
-        "baseline_fingerprint": _fingerprint(template.metadata.baseline),
+        "anchor_computed": template.metadata.anchor_computed,
+        "anchor_fingerprint": _fingerprint(template.metadata.anchor),
         "entries": report_entries,
         "bd_metrics": bd_metrics,
-        "baseline_environment": baseline_env,
+        "anchor_environment": anchor_env,
         "test_environment": test_env,
     }
 

@@ -220,7 +220,7 @@ def _parse_paths_field(value: Optional[str]) -> List[Path]:
     for line in normalized.splitlines():
         stripped = line.strip()
         if stripped:
-            items.append(Path(stripped).expanduser())
+            items.append(Path(stripped).testanduser())
     return items
 
 
@@ -248,7 +248,7 @@ async def create_bitstream_job(
 
     当输入为 .yuv（rawvideo）时，需要提供 width/height/fps（默认 yuv420p）。
     """
-    ref_path = Path(reference_path).expanduser() if reference_path else None
+    ref_path = Path(reference_path).testanduser() if reference_path else None
     enc_path_list = _parse_paths_field(encoded_paths)
 
     if not reference_file and not ref_path:

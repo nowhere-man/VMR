@@ -98,7 +98,7 @@ class FFmpegService:
         self,
         reference_path: Path,
         distorted_path: Path,
-        filter_expr: str,
+        filter_testr: str,
         ref_width: int = None,
         ref_height: int = None,
         ref_fps: float = None,
@@ -110,7 +110,7 @@ class FFmpegService:
         Args:
             reference_path: 参考视频路径
             distorted_path: 待测视频路径
-            filter_expr: 滤镜表达式（如 "psnr=stats_file=xxx"）
+            filter_testr: 滤镜表达式（如 "psnr=stats_file=xxx"）
             ref_width: 参考视频宽度（YUV格式必需）
             ref_height: 参考视频高度（YUV格式必需）
             ref_fps: 参考视频帧率（YUV格式必需）
@@ -140,7 +140,7 @@ class FFmpegService:
         # 添加滤镜和输出
         cmd.extend([
             "-lavfi",
-            filter_expr,
+            filter_testr,
             "-f",
             "null",
             "-",

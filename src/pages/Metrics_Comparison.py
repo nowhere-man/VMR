@@ -1,5 +1,5 @@
 """
-模板 Metrics对比 报告页面（Baseline / Test）
+模板 Metrics对比 报告页面（Anchor / Test）
 
 通过 `?template_job_id=<job_id>` 打开对应任务的报告。
 """
@@ -46,6 +46,32 @@ def _get_job_id() -> Optional[str]:
 
 def _load_report(job_id: str) -> Dict[str, Any]:
     return load_json_report(job_id, "metrics_analysis/report_data.json")
+
+
+def _format_points(points: List[float]) -> str:
+    clean = [p for p in points if isinstance(p, (int, float))]
+    if not clean:
+        return "-"
+    return ", ".join(f"{p:g}" for p in sorted(set(clean)))
+
+
+def _format_encoder_type(info: Dict[str, Any]) -> str:
+    return info.get("encoder_type") or "-"
+
+
+def _format_encoder_params(info: Dict[str, Any]) -> str:
+    return info.get("encoder_params") or "-"
+
+
+def _collect_points(entries: List[Dict[str, Any]], side_key: str) -> List[float]:
+    points: List[float] = []
+    for entry in entries:
+        side = entry.get(side_key) or {}
+        for item in side.get("encoded", []) or []:
+            _, val = _parse_point(item.get("label", ""))
+            if isinstance(val, (int, float)):
+                points.append(val)
+    return points
 
 
 st.set_page_config(page_title="Metrics对比", page_icon="📊", layout="wide")
@@ -101,7 +127,7 @@ bd_list: List[Dict[str, Any]] = report.get("bd_metrics", []) or []
 
 point_values: set = set()
 for entry in entries:
-    for side_key in ("baseline", "test"):
+    for side_key in ("anchor", "test"):
         side = entry.get(side_key) or {}
         for item in side.get("encoded", []) or []:
             _, val = _parse_point(item.get("label", ""))
@@ -129,6 +155,7 @@ st.markdown(f"<h4 style='text-align:right;'>{job_id}</h4>", unsafe_allow_html=Tr
 with st.sidebar:
     st.markdown("### 📑 Contents")
     contents = [
+        "- [Information](#information)",
         "- [Overall](#overall)",
         "- [Metrics](#metrics)",
         "  - [RD Curves](#rd-curve)",
@@ -168,6 +195,23 @@ html {
 </style>
 """, unsafe_allow_html=True)
 
+# ========== Information ==========
+st.header("Information", anchor="information")
+
+anchor_info = report.get("anchor", {}) or {}
+test_info = report.get("test", {}) or {}
+anchor_points = _collect_points(entries, "anchor")
+test_points = _collect_points(entries, "test")
+
+info_df = pd.DataFrame(
+    [
+        {"项目": "编码器类型", "Anchor": _format_encoder_type(anchor_info), "Test": _format_encoder_type(test_info)},
+        {"项目": "编码参数", "Anchor": _format_encoder_params(anchor_info), "Test": _format_encoder_params(test_info)},
+        {"项目": "码率点位", "Anchor": _format_points(anchor_points), "Test": _format_points(test_points)},
+    ]
+)
+st.dataframe(info_df, use_container_width=True, hide_index=True)
+
 
 # ========== Overall ==========
 st.header("Overall", anchor="overall")
@@ -177,7 +221,7 @@ _overall_rows = []
 _overall_perf_rows = []
 for entry in entries:
     video = entry.get("source")
-    for side_key, side_name in (("baseline", "Baseline"), ("test", "Test")):
+    for side_key, side_name in (("anchor", "Anchor"), ("test", "Test")):
         side = (entry.get(side_key) or {})
         for item in side.get("encoded", []) or []:
             rc, val = _parse_point(item.get("label", ""))
@@ -213,8 +257,8 @@ render_overall_section(
     df_metrics=_df_overall,
     df_perf=_df_overall_perf,
     bd_list=bd_list if has_bd else [],
-    base_label="Baseline",
-    exp_label="Test",
+    anchor_label="Anchor",
+    test_label="Test",
     show_bd=has_bd,
 )
 
@@ -225,7 +269,7 @@ st.header("Metrics", anchor="metrics")
 rows = []
 for entry in entries:
     video = entry.get("source")
-    for side_key, side_name in (("baseline", "Baseline"), ("test", "Test")):
+    for side_key, side_name in (("anchor", "Anchor"), ("test", "Test")):
         side = (entry.get(side_key) or {})
         for item in side.get("encoded", []) or []:
             rc, val = _parse_point(item.get("label", ""))
@@ -266,16 +310,16 @@ with col_select:
 
 # 筛选数据并绘制 RD 曲线
 video_df = df_metrics[df_metrics["Video"] == selected_video]
-baseline_data = video_df[video_df["Side"] == "Baseline"].sort_values("Bitrate_kbps")
+anchor_data = video_df[video_df["Side"] == "Anchor"].sort_values("Bitrate_kbps")
 test_data = video_df[video_df["Side"] == "Test"].sort_values("Bitrate_kbps")
 
 fig_rd = go.Figure()
 fig_rd.add_trace(
     go.Scatter(
-        x=baseline_data["Bitrate_kbps"],
-        y=baseline_data[selected_metric],
+        x=anchor_data["Bitrate_kbps"],
+        y=anchor_data[selected_metric],
         mode="lines+markers",
-        name="Baseline",
+        name="Anchor",
         marker=dict(size=10, color="#636efa"),
         line=dict(width=2, shape="spline", smoothing=1.3, color="#636efa"),
     )
@@ -300,20 +344,20 @@ fig_rd.update_layout(
 with col_chart:
     st.plotly_chart(fig_rd, use_container_width=True)
 
-# Diff 对比表（Baseline vs Test）
-base_df = df_metrics[df_metrics["Side"] == "Baseline"]
+# Diff 对比表（Anchor vs Test）
+anchor_df = df_metrics[df_metrics["Side"] == "Anchor"]
 test_df = df_metrics[df_metrics["Side"] == "Test"]
-merged = base_df.merge(
+merged = anchor_df.merge(
     test_df,
     on=["Video", "RC", "Point"],
-    suffixes=("_base", "_test"),
+    suffixes=("_anchor", "_test"),
 )
 if not merged.empty:
-    merged["Bitrate Δ%"] = ((merged["Bitrate_kbps_test"] - merged["Bitrate_kbps_base"]) / merged["Bitrate_kbps_base"].replace(0, pd.NA)) * 100
-    merged["PSNR Δ"] = merged["PSNR_test"] - merged["PSNR_base"]
-    merged["SSIM Δ"] = merged["SSIM_test"] - merged["SSIM_base"]
-    merged["VMAF Δ"] = merged["VMAF_test"] - merged["VMAF_base"]
-    merged["VMAF-NEG Δ"] = merged["VMAF-NEG_test"] - merged["VMAF-NEG_base"]
+    merged["Bitrate Δ%"] = ((merged["Bitrate_kbps_test"] - merged["Bitrate_kbps_anchor"]) / merged["Bitrate_kbps_anchor"].replace(0, pd.NA)) * 100
+    merged["PSNR Δ"] = merged["PSNR_test"] - merged["PSNR_anchor"]
+    merged["SSIM Δ"] = merged["SSIM_test"] - merged["SSIM_anchor"]
+    merged["VMAF Δ"] = merged["VMAF_test"] - merged["VMAF_anchor"]
+    merged["VMAF-NEG Δ"] = merged["VMAF-NEG_test"] - merged["VMAF-NEG_anchor"]
 
     diff_df = merged[
         ["Video", "RC", "Point", "Bitrate Δ%", "PSNR Δ", "SSIM Δ", "VMAF Δ", "VMAF-NEG Δ"]
@@ -547,8 +591,8 @@ st.header("Bitrates", anchor="码率分析")
 video_point_options = []
 for entry in entries:
     video = entry.get("source")
-    base_enc = (entry.get("baseline") or {}).get("encoded") or []
-    for item in base_enc:
+    anchor_enc = (entry.get("anchor") or {}).get("encoded") or []
+    for item in anchor_enc:
         rc, point = _parse_point(item.get("label", ""))
         if point is not None:
             video_point_options.append({
@@ -574,20 +618,20 @@ if video_point_options:
     with col_opt2:
         bin_seconds = st.slider("聚合间隔 (秒)", min_value=0.1, max_value=5.0, value=1.0, step=0.1, key="br_bin")
 
-    # 找到对应的 baseline 和 test 数据
-    baseline_bitrate = None
+    # 找到对应的 anchor 和 test 数据
+    anchor_bitrate = None
     test_bitrate = None
     ref_fps = 30.0
 
     for entry in entries:
         if entry.get("source") == selected_video_br:
-            ref_info = (entry.get("baseline") or {}).get("reference") or {}
+            ref_info = (entry.get("anchor") or {}).get("reference") or {}
             ref_fps = ref_info.get("fps") or 30.0
 
-            for item in (entry.get("baseline") or {}).get("encoded") or []:
+            for item in (entry.get("anchor") or {}).get("encoded") or []:
                 rc, point = _parse_point(item.get("label", ""))
                 if point == selected_point_br:
-                    baseline_bitrate = item.get("bitrate") or {}
+                    anchor_bitrate = item.get("bitrate") or {}
                     break
 
             for item in (entry.get("test") or {}).get("encoded") or []:
@@ -597,7 +641,7 @@ if video_point_options:
                     break
             break
 
-    if baseline_bitrate and test_bitrate:
+    if anchor_bitrate and test_bitrate:
         def _aggregate_bitrate(bitrate_data, bin_sec):
             ts = bitrate_data.get("frame_timestamps", []) or []
             sizes = bitrate_data.get("frame_sizes", []) or []
@@ -613,16 +657,16 @@ if video_point_options:
             y_kbps = [(bins[i] / bin_sec) / 1000.0 for i in xs]
             return x_times, y_kbps
 
-        base_x, base_y = _aggregate_bitrate(baseline_bitrate, bin_seconds)
+        anchor_x, anchor_y = _aggregate_bitrate(anchor_bitrate, bin_seconds)
         test_x, test_y = _aggregate_bitrate(test_bitrate, bin_seconds)
 
         fig_br = go.Figure()
         if chart_type == "柱状图":
-            fig_br.add_trace(go.Bar(x=base_x, y=base_y, name="Baseline", opacity=0.7, marker_color="#636efa"))
+            fig_br.add_trace(go.Bar(x=anchor_x, y=anchor_y, name="Anchor", opacity=0.7, marker_color="#636efa"))
             fig_br.add_trace(go.Bar(x=test_x, y=test_y, name="Test", opacity=0.7, marker_color="#f0553b"))
             fig_br.update_layout(barmode="group")
         else:
-            fig_br.add_trace(go.Scatter(x=base_x, y=base_y, mode="lines+markers", name="Baseline", line=dict(color="#636efa"), marker=dict(color="#636efa")))
+            fig_br.add_trace(go.Scatter(x=anchor_x, y=anchor_y, mode="lines+markers", name="Anchor", line=dict(color="#636efa"), marker=dict(color="#636efa")))
             fig_br.add_trace(go.Scatter(x=test_x, y=test_y, mode="lines+markers", name="Test", line=dict(color="#f0553b"), marker=dict(color="#f0553b")))
 
         fig_br.update_layout(
@@ -635,16 +679,16 @@ if video_point_options:
         st.plotly_chart(fig_br, use_container_width=True)
 
         # 显示平均码率对比
-        base_avg = (baseline_bitrate.get("avg_bitrate_bps") or sum(baseline_bitrate.get("frame_sizes", [])) * 8 / (len(baseline_bitrate.get("frame_timestamps", [])) / ref_fps if baseline_bitrate.get("frame_timestamps") else 1)) / 1000
+        anchor_avg = (anchor_bitrate.get("avg_bitrate_bps") or sum(anchor_bitrate.get("frame_sizes", [])) * 8 / (len(anchor_bitrate.get("frame_timestamps", [])) / ref_fps if anchor_bitrate.get("frame_timestamps") else 1)) / 1000
         test_avg = (test_bitrate.get("avg_bitrate_bps") or sum(test_bitrate.get("frame_sizes", [])) * 8 / (len(test_bitrate.get("frame_timestamps", [])) / ref_fps if test_bitrate.get("frame_timestamps") else 1)) / 1000
 
         # 从 entries 中获取 avg_bitrate_bps
         for entry in entries:
             if entry.get("source") == selected_video_br:
-                for item in (entry.get("baseline") or {}).get("encoded") or []:
+                for item in (entry.get("anchor") or {}).get("encoded") or []:
                     rc, point = _parse_point(item.get("label", ""))
                     if point == selected_point_br:
-                        base_avg = item.get("avg_bitrate_bps", 0) / 1000
+                        anchor_avg = item.get("avg_bitrate_bps", 0) / 1000
                         break
                 for item in (entry.get("test") or {}).get("encoded") or []:
                     rc, point = _parse_point(item.get("label", ""))
@@ -654,9 +698,9 @@ if video_point_options:
                 break
 
         col_m1, col_m2, col_m3 = st.columns(3)
-        col_m1.metric("Baseline 平均码率", f"{base_avg:.2f} kbps")
+        col_m1.metric("Anchor 平均码率", f"{anchor_avg:.2f} kbps")
         col_m2.metric("Test 平均码率", f"{test_avg:.2f} kbps")
-        diff_pct = ((test_avg - base_avg) / base_avg * 100) if base_avg > 0 else 0
+        diff_pct = ((test_avg - anchor_avg) / anchor_avg * 100) if anchor_avg > 0 else 0
         col_m3.metric("码率差异", f"{diff_pct:+.2f}%", delta=f"{diff_pct:+.2f}%", delta_color="inverse")
     else:
         st.warning("未找到对应的码率数据。请确保报告包含帧级码率信息。")
@@ -672,7 +716,7 @@ perf_rows = []
 perf_detail_rows = []
 for entry in entries:
     video = entry.get("source")
-    for side_key, side_name in (("baseline", "Baseline"), ("test", "Test")):
+    for side_key, side_name in (("anchor", "Anchor"), ("test", "Test")):
         side = (entry.get(side_key) or {})
         for item in side.get("encoded", []) or []:
             rc, point = _parse_point(item.get("label", ""))
@@ -703,23 +747,23 @@ if perf_rows:
 
     # 1. 汇总Diff表格
     st.subheader("Delta", anchor="perf-diff")
-    base_perf = df_perf[df_perf["Side"] == "Baseline"]
+    anchor_perf = df_perf[df_perf["Side"] == "Anchor"]
     test_perf = df_perf[df_perf["Side"] == "Test"]
-    merged_perf = base_perf.merge(
+    merged_perf = anchor_perf.merge(
         test_perf,
         on=["Video", "Point"],
-        suffixes=("_base", "_test"),
+        suffixes=("_anchor", "_test"),
     )
     if not merged_perf.empty:
-        merged_perf["Δ FPS"] = merged_perf["FPS_test"] - merged_perf["FPS_base"]
-        merged_perf["Δ CPU Avg(%)"] = merged_perf["CPU Avg(%)_test"] - merged_perf["CPU Avg(%)_base"]
+        merged_perf["Δ FPS"] = merged_perf["FPS_test"] - merged_perf["FPS_anchor"]
+        merged_perf["Δ CPU Avg(%)"] = merged_perf["CPU Avg(%)_test"] - merged_perf["CPU Avg(%)_anchor"]
 
         diff_perf_df = merged_perf[
-            ["Video", "Point", "FPS_base", "FPS_test", "Δ FPS", "CPU Avg(%)_base", "CPU Avg(%)_test", "Δ CPU Avg(%)"]
+            ["Video", "Point", "FPS_anchor", "FPS_test", "Δ FPS", "CPU Avg(%)_anchor", "CPU Avg(%)_test", "Δ CPU Avg(%)"]
         ].rename(columns={
-            "FPS_base": "Baseline FPS",
+            "FPS_anchor": "Anchor FPS",
             "FPS_test": "Test FPS",
-            "CPU Avg(%)_base": "Baseline CPU(%)",
+            "CPU Avg(%)_anchor": "Anchor CPU(%)",
             "CPU Avg(%)_test": "Test CPU(%)",
         }).sort_values(by=["Video", "Point"]).reset_index(drop=True)
 
@@ -734,10 +778,10 @@ if perf_rows:
         # 格式化精度：FPS 和 CPU 都保留2位小数
         perf_format_dict = {
             "Point": "{:.2f}",
-            "Baseline FPS": "{:.2f}",
+            "Anchor FPS": "{:.2f}",
             "Test FPS": "{:.2f}",
             "Δ FPS": "{:.2f}",
-            "Baseline CPU(%)": "{:.2f}",
+            "Anchor CPU(%)": "{:.2f}",
             "Test CPU(%)": "{:.2f}",
             "Δ CPU Avg(%)": "{:.2f}",
         }
@@ -781,33 +825,33 @@ if perf_rows:
     agg_interval = st.slider("聚合间隔 (ms)", min_value=100, max_value=1000, value=100, step=100, key="cpu_agg")
 
     # 获取对应的CPU采样数据
-    base_samples = []
+    anchor_samples = []
     test_samples = []
     for _, row in df_perf.iterrows():
         if row["Video"] == selected_video_perf and row["Point"] == selected_point_perf:
-            if row["Side"] == "Baseline":
-                base_samples = row.get("cpu_samples", []) or []
+            if row["Side"] == "Anchor":
+                anchor_samples = row.get("cpu_samples", []) or []
             else:
                 test_samples = row.get("cpu_samples", []) or []
 
-    if base_samples or test_samples:
+    if anchor_samples or test_samples:
         fig_cpu = create_cpu_chart(
-            base_samples=base_samples,
-            exp_samples=test_samples,
+            anchor_samples=anchor_samples,
+            test_samples=test_samples,
             agg_interval=agg_interval,
             title=f"CPU占用率 - {selected_video_perf} ({selected_point_perf})",
-            base_label="Baseline",
-            exp_label="Test",
+            anchor_label="Anchor",
+            test_label="Test",
         )
         st.plotly_chart(fig_cpu, use_container_width=True)
 
         # 显示平均CPU占用率对比
-        base_avg_cpu = sum(base_samples) / len(base_samples) if base_samples else 0
+        anchor_avg_cpu = sum(anchor_samples) / len(anchor_samples) if anchor_samples else 0
         test_avg_cpu = sum(test_samples) / len(test_samples) if test_samples else 0
-        cpu_diff_pct = ((test_avg_cpu - base_avg_cpu) / base_avg_cpu * 100) if base_avg_cpu > 0 else 0
+        cpu_diff_pct = ((test_avg_cpu - anchor_avg_cpu) / anchor_avg_cpu * 100) if anchor_avg_cpu > 0 else 0
 
         col_cpu1, col_cpu2, col_cpu3 = st.columns(3)
-        col_cpu1.metric("Baseline Average CPU Usage", f"{base_avg_cpu:.2f}%")
+        col_cpu1.metric("Anchor Average CPU Usage", f"{anchor_avg_cpu:.2f}%")
         col_cpu2.metric("Test Average CPU Usage", f"{test_avg_cpu:.2f}%")
         col_cpu3.metric("CPU Usage 差异", f"{cpu_diff_pct:+.2f}%", delta=f"{cpu_diff_pct:+.2f}%", delta_color="inverse")
     else:
@@ -817,8 +861,8 @@ if perf_rows:
     st.subheader("FPS", anchor="fps-chart")
     fig_fps = create_fps_chart(
         df_perf=df_perf,
-        base_label="Baseline",
-        exp_label="Test",
+        anchor_label="Anchor",
+        test_label="Test",
     )
     st.plotly_chart(fig_fps, use_container_width=True)
 
@@ -842,8 +886,8 @@ else:
 # ========== 环境信息 ==========
 st.header("Machine Info", anchor="环境信息")
 
-# 使用 baseline_environment（任务开始时的环境状态）
-env = report.get("baseline_environment") or report.get("test_environment") or {}
+# 使用 anchor_environment（Anchor 侧环境，任务开始时的环境状态）
+env = report.get("anchor_environment") or report.get("test_environment") or {}
 
 if env:
     st.markdown(format_env_info(env))

@@ -8,7 +8,7 @@ A video quality analysis tool for comparing video encoders using quality metrics
 - **BD-Rate Calculation**: Bjontegaard Delta Rate/Metrics for encoder comparison
 - **Performance Benchmarks**: Encoding FPS, CPU utilization tracking with real-time sampling
 - **Template System**: Create reusable encoding templates for A/B testing
-- **Interactive Reports**: Streamlit-based visualization with RD curves, bitrate charts, and CPU usage graphs
+- **Interactive Reports**: Streamlit-anchord visualization with RD curves, bitrate charts, and CPU usage graphs
 - **REST API**: FastAPI backend for programmatic access
 
 ## Requirements

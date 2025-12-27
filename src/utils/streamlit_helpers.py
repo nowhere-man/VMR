@@ -183,72 +183,72 @@ def aggregate_cpu_samples(samples: List[float], interval_ms: int) -> Tuple[List[
 
 
 def create_cpu_chart(
-    base_samples: List[float],
-    exp_samples: List[float],
+    anchor_samples: List[float],
+    test_samples: List[float],
     agg_interval: int,
     title: str,
-    base_label: str = "Baseline",
-    exp_label: str = "Test",
-    base_color: str = "#636efa",
-    exp_color: str = "#f0553b",
+    anchor_label: str = "Anchor",
+    test_label: str = "Test",
+    anchor_color: str = "#636efa",
+    test_color: str = "#f0553b",
 ) -> go.Figure:
     """
     创建 CPU 占用率对比图表
 
     Args:
-        base_samples: 基准组 CPU 采样数据
-        exp_samples: 实验组 CPU 采样数据
+        anchor_samples: 基准组 CPU 采样数据
+        test_samples: 实验组 CPU 采样数据
         agg_interval: 聚合间隔（毫秒）
         title: 图表标题
-        base_label: 基准组标签
-        exp_label: 实验组标签
-        base_color: 基准组颜色
-        exp_color: 实验组颜色
+        anchor_label: 基准组标签
+        test_label: 实验组标签
+        anchor_color: 基准组颜色
+        test_color: 实验组颜色
 
     Returns:
         Plotly Figure 对象
     """
-    base_x, base_y = aggregate_cpu_samples(base_samples, agg_interval)
-    exp_x, exp_y = aggregate_cpu_samples(exp_samples, agg_interval)
+    anchor_x, anchor_y = aggregate_cpu_samples(anchor_samples, agg_interval)
+    test_x, test_y = aggregate_cpu_samples(test_samples, agg_interval)
 
     fig = go.Figure()
 
     # 基准组折线
-    if base_y:
+    if anchor_y:
         fig.add_trace(go.Scatter(
-            x=base_x, y=base_y,
+            x=anchor_x, y=anchor_y,
             mode="lines",
-            name=base_label,
-            line=dict(color=base_color, width=2),
+            name=anchor_label,
+            line=dict(color=anchor_color, width=2),
         ))
         # 标记最大值
-        max_idx = base_y.index(max(base_y))
+        max_idx = anchor_y.index(max(anchor_y))
         fig.add_trace(go.Scatter(
-            x=[base_x[max_idx]], y=[base_y[max_idx]],
+            x=[anchor_x[max_idx]], y=[anchor_y[max_idx]],
             mode="markers+text",
-            name=f"{base_label} Max",
-            marker=dict(color=base_color, size=12, symbol="star"),
-            text=[f"Max: {base_y[max_idx]:.1f}%"],
+            name=f"{anchor_label} Max",
+            marker=dict(color=anchor_color, size=12, symbol="star"),
+            text=[f"Max: {anchor_y[max_idx]:.1f}%"],
             textposition="top center",
             showlegend=False,
         ))
 
     # 实验组折线
-    if exp_y:
+    if test_y:
         fig.add_trace(go.Scatter(
-            x=exp_x, y=exp_y,
+            x=test_x, y=test_y,
             mode="lines",
-            name=exp_label,
-            line=dict(color=exp_color, width=2),
+            name=test_label,
+            line=dict(color=test_color, width=2),
         ))
         # 标记最大值
-        max_idx = exp_y.index(max(exp_y))
+        max_idx = test_y.index(max(test_y))
         fig.add_trace(go.Scatter(
-            x=[exp_x[max_idx]], y=[exp_y[max_idx]],
+            x=[test_x[max_idx]], y=[test_y[max_idx]],
             mode="markers+text",
-            name=f"{exp_label} Max",
-            marker=dict(color=exp_color, size=12, symbol="star"),
-            text=[f"Max: {exp_y[max_idx]:.1f}%"],
+            name=f"{test_label} Max",
+            marker=dict(color=test_color, size=12, symbol="star"),
+            text=[f"Max: {test_y[max_idx]:.1f}%"],
             textposition="top center",
             showlegend=False,
         ))
@@ -266,20 +266,20 @@ def create_cpu_chart(
 
 def create_fps_chart(
     df_perf: "pd.DataFrame",
-    base_label: str = "Baseline",
-    exp_label: str = "Test",
-    base_color: str = "#636efa",
-    exp_color: str = "#f0553b",
+    anchor_label: str = "Anchor",
+    test_label: str = "Test",
+    anchor_color: str = "#636efa",
+    test_color: str = "#f0553b",
 ) -> go.Figure:
     """
     创建 FPS 对比图表
 
     Args:
         df_perf: 性能数据 DataFrame，包含 Video, Side, Point, FPS 列
-        base_label: 基准组标签
-        exp_label: 实验组标签
-        base_color: 基准组颜色
-        exp_color: 实验组颜色
+        anchor_label: 基准组标签
+        test_label: 实验组标签
+        anchor_color: 基准组颜色
+        test_color: 实验组颜色
 
     Returns:
         Plotly Figure 对象
@@ -290,31 +290,31 @@ def create_fps_chart(
     # 创建 x 轴标签：Video_Point
     df_sorted["x_label"] = df_sorted["Video"].astype(str) + "_" + df_sorted["Point"].astype(str)
 
-    # 分离 baseline 和 test 数据
-    base_data = df_sorted[df_sorted["Side"] == base_label]
-    exp_data = df_sorted[df_sorted["Side"] == exp_label]
+    # 分离 anchor 和 test 数据
+    anchor_data = df_sorted[df_sorted["Side"] == anchor_label]
+    test_data = df_sorted[df_sorted["Side"] == test_label]
 
     fig = go.Figure()
 
-    # Baseline 折线
-    if not base_data.empty:
+    # Anchor 折线
+    if not anchor_data.empty:
         fig.add_trace(go.Scatter(
-            x=base_data["x_label"],
-            y=base_data["FPS"],
+            x=anchor_data["x_label"],
+            y=anchor_data["FPS"],
             mode="lines+markers",
-            name=base_label,
-            line=dict(color=base_color, width=2),
+            name=anchor_label,
+            line=dict(color=anchor_color, width=2),
             marker=dict(size=8),
         ))
 
     # Test 折线
-    if not exp_data.empty:
+    if not test_data.empty:
         fig.add_trace(go.Scatter(
-            x=exp_data["x_label"],
-            y=exp_data["FPS"],
+            x=test_data["x_label"],
+            y=test_data["FPS"],
             mode="lines+markers",
-            name=exp_label,
-            line=dict(color=exp_color, width=2),
+            name=test_label,
+            line=dict(color=test_color, width=2),
             marker=dict(size=8),
         ))
 
@@ -518,8 +518,8 @@ def render_overall_section(
     df_metrics: "pd.DataFrame",
     df_perf: "pd.DataFrame",
     bd_list: List[Dict[str, Any]],
-    base_label: str = "Baseline",
-    exp_label: str = "Test",
+    anchor_label: str = "Anchor",
+    test_label: str = "Test",
     show_bd: bool = True,
 ) -> None:
     """
@@ -529,8 +529,8 @@ def render_overall_section(
         df_metrics: 指标数据 DataFrame，包含 Video, Side, RC, Point, Bitrate_kbps, PSNR, SSIM, VMAF, VMAF-NEG 列
         df_perf: 性能数据 DataFrame，包含 Video, Side, Point, FPS, CPU Avg(%) 列
         bd_list: BD-Rate/BD-Metrics 数据列表
-        base_label: 基准组标签
-        exp_label: 实验组标签
+        anchor_label: 基准组标签
+        test_label: 实验组标签
         show_bd: 是否展示 BD-Rate / BD-Metrics 汇总
     """
     if df_metrics.empty:
@@ -612,14 +612,14 @@ def render_overall_section(
 
     # 筛选选中点位的数据
     point_df = df_metrics[df_metrics["Point"] == selected_point]
-    base_point = point_df[point_df["Side"] == base_label]
-    exp_point = point_df[point_df["Side"] == exp_label]
+    anchor_point = point_df[point_df["Side"] == anchor_label]
+    test_point = point_df[point_df["Side"] == test_label]
 
-    # 合并 baseline 和 test
-    merged_point = base_point.merge(
-        exp_point,
+    # 合并 anchor 和 test
+    merged_point = anchor_point.merge(
+        test_point,
         on=["Video", "RC", "Point"],
-        suffixes=("_base", "_exp"),
+        suffixes=("_anchor", "_test"),
     )
 
     if merged_point.empty:
@@ -628,16 +628,16 @@ def render_overall_section(
 
     performance_df = pd.DataFrame()
 
-    psnr_diff = merged_point["PSNR_exp"] - merged_point["PSNR_base"]
+    psnr_diff = merged_point["PSNR_test"] - merged_point["PSNR_anchor"]
     psnr_avg, psnr_max, psnr_min = _summary_stats(psnr_diff)
 
-    ssim_diff = merged_point["SSIM_exp"] - merged_point["SSIM_base"]
+    ssim_diff = merged_point["SSIM_test"] - merged_point["SSIM_anchor"]
     ssim_avg, ssim_max, ssim_min = _summary_stats(ssim_diff)
 
-    vmaf_diff = merged_point["VMAF_exp"] - merged_point["VMAF_base"]
+    vmaf_diff = merged_point["VMAF_test"] - merged_point["VMAF_anchor"]
     vmaf_avg, vmaf_max, vmaf_min = _summary_stats(vmaf_diff)
 
-    vmaf_neg_diff = merged_point["VMAF-NEG_exp"] - merged_point["VMAF-NEG_base"]
+    vmaf_neg_diff = merged_point["VMAF-NEG_test"] - merged_point["VMAF-NEG_anchor"]
     vmaf_neg_avg, vmaf_neg_max, vmaf_neg_min = _summary_stats(vmaf_neg_diff)
 
     metrics_df = pd.DataFrame(
@@ -651,19 +651,19 @@ def render_overall_section(
 
     if not df_perf.empty:
         perf_point_df = df_perf[df_perf["Point"] == selected_point]
-        base_perf_point = perf_point_df[perf_point_df["Side"] == base_label]
-        exp_perf_point = perf_point_df[perf_point_df["Side"] == exp_label]
-        merged_perf_point = base_perf_point.merge(
-            exp_perf_point,
+        anchor_perf_point = perf_point_df[perf_point_df["Side"] == anchor_label]
+        test_perf_point = perf_point_df[perf_point_df["Side"] == test_label]
+        merged_perf_point = anchor_perf_point.merge(
+            test_perf_point,
             on=["Video", "Point"],
-            suffixes=("_base", "_exp"),
+            suffixes=("_anchor", "_test"),
         )
 
         if not merged_perf_point.empty:
-            cpu_diff_pct_series = ((merged_perf_point["CPU Avg(%)_exp"] - merged_perf_point["CPU Avg(%)_base"]) / merged_perf_point["CPU Avg(%)_base"].replace(0, pd.NA)) * 100
+            cpu_diff_pct_series = ((merged_perf_point["CPU Avg(%)_test"] - merged_perf_point["CPU Avg(%)_anchor"]) / merged_perf_point["CPU Avg(%)_anchor"].replace(0, pd.NA)) * 100
             cpu_avg_pct, cpu_max_pct, cpu_min_pct = _summary_stats(cpu_diff_pct_series)
 
-            fps_diff_pct_series = ((merged_perf_point["FPS_exp"] - merged_perf_point["FPS_base"]) / merged_perf_point["FPS_base"].replace(0, pd.NA)) * 100
+            fps_diff_pct_series = ((merged_perf_point["FPS_test"] - merged_perf_point["FPS_anchor"]) / merged_perf_point["FPS_anchor"].replace(0, pd.NA)) * 100
             fps_avg_pct, fps_max_pct, fps_min_pct = _summary_stats(fps_diff_pct_series)
 
             performance_df = pd.DataFrame(
@@ -675,7 +675,7 @@ def render_overall_section(
                 index=["CPU Usage", "FPS"],
             )
 
-    bitrate_diff_pct_series = ((merged_point["Bitrate_kbps_exp"] - merged_point["Bitrate_kbps_base"]) / merged_point["Bitrate_kbps_base"].replace(0, pd.NA)) * 100
+    bitrate_diff_pct_series = ((merged_point["Bitrate_kbps_test"] - merged_point["Bitrate_kbps_anchor"]) / merged_point["Bitrate_kbps_anchor"].replace(0, pd.NA)) * 100
     bitrate_avg, bitrate_max, bitrate_min = _summary_stats(bitrate_diff_pct_series)
     bitrate_df = pd.DataFrame(
         {
