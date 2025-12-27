@@ -386,7 +386,64 @@ if perf_rows:
         }
 
         styled_perf = diff_perf_df.style.applymap(color_positive_green, subset=["Δ FPS"]).applymap(color_positive_red, subset=["Δ CPU Avg(%)"]).format(perf_format_dict, na_rep="-")
-        st.dataframe(styled_perf, use_container_width=True, hide_index=True)
+        perf_metric_config = {
+            "Δ FPS": {"fmt": "{:+.2f}", "pos": "#00cc96", "neg": "#ef553b"},
+            "Δ CPU Avg(%)": {"fmt": "{:+.2f}%", "pos": "#ef553b", "neg": "#00cc96"},
+        }
+        perf_point_options = sorted(merged_perf["Point"].dropna().unique().tolist())
+        perf_metric_options = ["Δ FPS", "Δ CPU Avg(%)"]
+        if perf_point_options:
+            col_sel1, col_sel2 = st.columns(2)
+            with col_sel1:
+                selected_point = st.selectbox("选择码率点位", perf_point_options, key="perf_delta_point_analysis")
+            with col_sel2:
+                selected_metric = st.selectbox("选择指标", perf_metric_options, key="perf_delta_metric_analysis")
+
+            chart_source = merged_perf[merged_perf["Point"] == selected_point]
+            if not chart_source.empty:
+                agg_chart = chart_source.groupby("Video")[selected_metric].mean().reset_index()
+                video_order = chart_source["Video"].dropna().unique().tolist()
+                agg_chart["Video"] = pd.Categorical(agg_chart["Video"], categories=video_order, ordered=True)
+                agg_chart = agg_chart.sort_values("Video")
+
+                cfg = perf_metric_config.get(selected_metric, perf_metric_config["Δ FPS"])
+                colors = []
+                texts = []
+                for value in agg_chart[selected_metric]:
+                    if pd.isna(value) or not isinstance(value, (int, float)):
+                        colors.append("gray")
+                        texts.append("")
+                    elif value > 0:
+                        colors.append(cfg["pos"])
+                        texts.append(cfg["fmt"].format(value))
+                    elif value < 0:
+                        colors.append(cfg["neg"])
+                        texts.append(cfg["fmt"].format(value))
+                    else:
+                        colors.append("gray")
+                        texts.append(cfg["fmt"].format(value))
+
+                fig_perf_delta = go.Figure(
+                    go.Bar(
+                        x=agg_chart["Video"],
+                        y=agg_chart[selected_metric],
+                        marker_color=colors,
+                        text=texts,
+                        textposition="outside",
+                    )
+                )
+                fig_perf_delta.update_layout(
+                    xaxis_title="Video",
+                    yaxis_title=selected_metric,
+                )
+                st.plotly_chart(fig_perf_delta, use_container_width=True)
+            else:
+                st.info("暂无对应点位的 Delta 数据。")
+        else:
+            st.info("暂无可用的码率点位数据。")
+
+        with st.expander("查看 Delta 表格", expanded=False):
+            st.dataframe(styled_perf, use_container_width=True, hide_index=True)
 
     # 2. CPU折线图
     st.subheader("CPU Usage", anchor="cpu-chart")
