@@ -569,13 +569,5 @@ class FFmpegService:
             raise RuntimeError(f"Failed to encode video: {str(e)}")
 
 
-# Helper function for subprocess with timeout
-async def _wait_for_process(
-    process: asyncio.subprocess.Process, timeout: int
-) -> Tuple[bytes, bytes]:
-    """等待子进程完成，带超时"""
-    return await asyncio.wait_for(process.communicate(), timeout=timeout)
-
-
 # 全局单例
 ffmpeg_service = FFmpegService()

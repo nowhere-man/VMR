@@ -531,24 +531,35 @@ async def run_template(
         )
 
         # 生成 BD 曲线
+        def _extract_bitrate(item):
+            bitrate = item.get("avg_bitrate_bps") or (item.get("bitrate") or {}).get("avg_bitrate_bps")
+            if isinstance(bitrate, (int, float)) and bitrate > 0:
+                return float(bitrate)
+            return None
+
+        def _extract_metric_value(item, key):
+            # vmaf_neg_mean 在 vmaf 结构里，不是单独的 vmaf_neg 结构
+            if key == "vmaf_neg":
+                metric = ((item.get("metrics") or {}).get("vmaf") or {}).get("summary") or {}
+                if not metric:
+                    metric = item.get("vmaf") or {}
+                val = metric.get("vmaf_neg_mean")
+            else:
+                metric = ((item.get("metrics") or {}).get(key) or {}).get("summary") or {}
+                if not metric:
+                    metric = item.get(key) or {}
+                val = metric.get(f"{key}_avg") or metric.get(f"{key}_mean")
+            if isinstance(val, (int, float)):
+                return float(val)
+            return None
+
         def _collect(series, key):
             pts = []
             for item in series:
-                # avg_bitrate_bps 可能在 item["bitrate"]["avg_bitrate_bps"] 或直接在 item 上
-                bitrate = item.get("avg_bitrate_bps") or (item.get("bitrate") or {}).get("avg_bitrate_bps")
-                # vmaf_neg_mean 在 vmaf 结构里，不是单独的 vmaf_neg 结构
-                if key == "vmaf_neg":
-                    metric = ((item.get("metrics") or {}).get("vmaf") or {}).get("summary") or {}
-                    if not metric:
-                        metric = item.get("vmaf") or {}
-                    val = metric.get("vmaf_neg_mean")
-                else:
-                    metric = ((item.get("metrics") or {}).get(key) or {}).get("summary") or {}
-                    if not metric:
-                        metric = item.get(key) or {}
-                    val = metric.get(f"{key}_avg") or metric.get(f"{key}_mean")
-                if isinstance(val, (int, float)) and isinstance(bitrate, (int, float)) and bitrate > 0:
-                    pts.append((float(val), float(bitrate)))
+                bitrate = _extract_bitrate(item)
+                val = _extract_metric_value(item, key)
+                if bitrate is not None and val is not None:
+                    pts.append((val, bitrate))
             return pts
 
         # encoded summaries are in report["encoded"]
@@ -569,21 +580,10 @@ async def run_template(
             pts_b = []
             for series, target in ((base_enc, pts_a), (test_enc, pts_b)):
                 for item in series:
-                    # avg_bitrate_bps 可能在 item["bitrate"]["avg_bitrate_bps"] 或直接在 item 上
-                    bitrate = item.get("avg_bitrate_bps") or (item.get("bitrate") or {}).get("avg_bitrate_bps")
-                    # vmaf_neg_mean 在 vmaf 结构里，不是单独的 vmaf_neg 结构
-                    if key == "vmaf_neg":
-                        metric = ((item.get("metrics") or {}).get("vmaf") or {}).get("summary") or {}
-                        if not metric:
-                            metric = item.get("vmaf") or {}
-                        val = metric.get("vmaf_neg_mean")
-                    else:
-                        metric = ((item.get("metrics") or {}).get(key) or {}).get("summary") or {}
-                        if not metric:
-                            metric = item.get(key) or {}
-                        val = metric.get(f"{key}_avg") or metric.get(f"{key}_mean")
-                    if isinstance(val, (int, float)) and isinstance(bitrate, (int, float)) and bitrate > 0:
-                        target.append((float(bitrate), float(val)))
+                    bitrate = _extract_bitrate(item)
+                    val = _extract_metric_value(item, key)
+                    if bitrate is not None and val is not None:
+                        target.append((bitrate, val))
             if len(pts_a) < 4 or len(pts_b) < 4:
                 return None
             r1, m1 = zip(*sorted(pts_a, key=lambda x: x[0]))

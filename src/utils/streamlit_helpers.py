@@ -428,6 +428,92 @@ def _render_overall_table(
     st.dataframe(styler, use_container_width=True)
 
 
+def render_delta_bar_chart_by_point(
+    df: "pd.DataFrame",
+    point_col: str,
+    metric_options: List[str],
+    metric_config: Dict[str, Dict[str, str]],
+    point_select_label: str,
+    metric_select_label: str,
+    point_select_key: str,
+    metric_select_key: str,
+    video_col: str = "Video",
+    empty_point_msg: str = "暂无可用的码率点位数据。",
+    empty_data_msg: str = "暂无对应点位的 Delta 数据。",
+) -> None:
+    if df.empty:
+        st.info(empty_data_msg)
+        return
+
+    point_options = sorted(df[point_col].dropna().unique().tolist())
+    if not point_options:
+        st.info(empty_point_msg)
+        return
+
+    col_sel1, col_sel2 = st.columns(2)
+    with col_sel1:
+        selected_point = st.selectbox(point_select_label, point_options, key=point_select_key)
+    with col_sel2:
+        selected_metric = st.selectbox(metric_select_label, metric_options, key=metric_select_key)
+
+    chart_source = df[df[point_col] == selected_point]
+    if chart_source.empty:
+        st.info(empty_data_msg)
+        return
+
+    agg_chart = chart_source.groupby(video_col)[selected_metric].mean().reset_index()
+    video_order = chart_source[video_col].dropna().unique().tolist()
+    agg_chart[video_col] = pd.Categorical(agg_chart[video_col], categories=video_order, ordered=True)
+    agg_chart = agg_chart.sort_values(video_col)
+
+    default_cfg = {"fmt": "{:+.2f}", "pos": "#00cc96", "neg": "#ef553b"}
+    cfg = metric_config.get(selected_metric, default_cfg)
+    colors = []
+    texts = []
+    for value in agg_chart[selected_metric]:
+        if pd.isna(value) or not isinstance(value, (int, float)):
+            colors.append("gray")
+            texts.append("")
+        elif value > 0:
+            colors.append(cfg.get("pos", default_cfg["pos"]))
+            texts.append(cfg.get("fmt", default_cfg["fmt"]).format(value))
+        elif value < 0:
+            colors.append(cfg.get("neg", default_cfg["neg"]))
+            texts.append(cfg.get("fmt", default_cfg["fmt"]).format(value))
+        else:
+            colors.append("gray")
+            texts.append(cfg.get("fmt", default_cfg["fmt"]).format(value))
+
+    fig_delta = go.Figure(
+        go.Bar(
+            x=agg_chart[video_col],
+            y=agg_chart[selected_metric],
+            marker_color=colors,
+            text=texts,
+            textposition="outside",
+        )
+    )
+    fig_delta.update_layout(
+        xaxis_title=video_col,
+        yaxis_title=selected_metric,
+    )
+    st.plotly_chart(fig_delta, use_container_width=True)
+
+
+def render_delta_table_expander(
+    title: str,
+    styled_df: Any,
+    column_config: Optional[Dict[str, Any]] = None,
+) -> None:
+    with st.expander(title, expanded=False):
+        st.dataframe(
+            styled_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config=column_config,
+        )
+
+
 def render_overall_section(
     df_metrics: "pd.DataFrame",
     df_perf: "pd.DataFrame",
